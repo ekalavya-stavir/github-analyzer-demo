@@ -1,0 +1,30 @@
+{
+  "name": "github-analyser",
+  "version": "1.0.0",
+  "description": "CLI tool to evaluate developers based on GitHub contributions and generate HTML scorecard reports",
+  "main": "index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "bin": {
+    "github-analyser": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "analyse": "node index.js",
+    "lint": "eslint src/"
+  },
+  "keywords": [
+    "github",
+    "developer",
+    "scorecard",
+    "analysis",
+    "code-quality",
+    "cli"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "octokit": "^4.1.0"
+  }
+}

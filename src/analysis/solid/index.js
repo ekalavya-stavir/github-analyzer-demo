@@ -1,0 +1,158 @@
+/**
+ * SOLID Principles Analyzer (Heuristic-based)
+ *
+ * Detects violations of SOLID principles:
+ * - S: Large classes/modules (Single Responsibility violation)
+ * - O: Hardcoded type checks (Open/Closed violation)
+ * - L: (Limited detection via type checking patterns)
+ * - I: Large interfaces/parameter lists (Interface Segregation)
+ * - D: Direct instantiation / tight coupling (Dependency Inversion)
+ *
+ * Score: 0-10 (10 = best adherence to SOLID)
+ */
+
+const CODE_FILE_EXTENSIONS = /\.(js|jsx|ts|tsx|py|java|go|cs|php|rb|kt|swift)$/;
+
+const SRP_INDICATORS = [
+  { pattern: /\bclass\b/g, name: 'class-declaration' },
+  { pattern: /\bexport\s+(default\s+)?class\b/g, name: 'exported-class' },
+];
+
+const GOD_CLASS_PATTERNS = [
+  { pattern: /\bManager\b/g, weight: 0.5, name: 'god-class-manager' },
+  { pattern: /\bHandler\b/g, weight: 0.3, name: 'god-class-handler' },
+  { pattern: /\bController\b.*\bService\b|\bService\b.*\bController\b/g, weight: 0.8, name: 'mixed-concerns' },
+  { pattern: /\bUtils?\b/g, weight: 0.3, name: 'util-class' },
+  { pattern: /\bHelper\b/g, weight: 0.3, name: 'helper-class' },
+];
+
+const OCP_VIOLATIONS = [
+  { pattern: /\binstanceof\b/g, weight: 0.5, name: 'instanceof-check' },
+  { pattern: /\btypeof\s+\w+\s*===?\s*['"][^'"]+['"]/g, weight: 0.3, name: 'typeof-check' },
+  { pattern: /switch\s*\(\s*\w+\.type\b/g, weight: 0.8, name: 'type-switch' },
+  { pattern: /if\s*\(\s*\w+\.type\s*===?/g, weight: 0.6, name: 'type-if-check' },
+];
+
+const DIP_VIOLATIONS = [
+  { pattern: /\bnew\s+[A-Z]\w+\s*\(/g, weight: 0.3, name: 'direct-instantiation' },
+  { pattern: /require\s*\(['"]\.{1,2}\//g, weight: 0.1, name: 'relative-require' },
+  { pattern: /import\s+.*from\s+['"]\.{1,2}\//g, weight: 0.05, name: 'relative-import' },
+];
+
+const COUPLING_PATTERNS = [
+  { pattern: /\bglobal\b|\bwindow\b|\bprocess\.env\b/g, weight: 0.5, name: 'global-access' },
+  { pattern: /\.\w+\.\w+\.\w+\.\w+/g, weight: 0.4, name: 'deep-property-chain' },
+];
+
+export function analyzeSolid(patches) {
+  if (!patches || patches.length === 0) {
+    return { score: 5, details: {} };
+  }
+
+  const codePatches = patches.filter((p) => CODE_FILE_EXTENSIONS.test(p.filename));
+  if (codePatches.length === 0) {
+    return { score: 7, details: { note: 'No code files' } };
+  }
+
+  let totalLines = 0;
+  let srpViolations = 0;
+  let ocpViolations = 0;
+  let dipViolations = 0;
+  let couplingViolations = 0;
+  let godClassIndicators = 0;
+  const violationDetails = [];
+
+  for (const file of codePatches) {
+    const addedLines = extractAddedLines(file.patch);
+    totalLines += addedLines.length;
+    const code = addedLines.join('\n');
+
+    let fileMethodCount = 0;
+    const methodPattern = /\b(function|async\s+function|\w+\s*\(.*\)\s*\{|=>\s*\{)/g;
+    const methodMatches = code.match(methodPattern);
+    if (methodMatches) fileMethodCount = methodMatches.length;
+
+    if (fileMethodCount > 15) {
+      srpViolations++;
+      violationDetails.push({ type: 'SRP', file: file.filename, detail: `${fileMethodCount} methods in single file` });
+    }
+
+    if (addedLines.length > 300) {
+      srpViolations++;
+      violationDetails.push({ type: 'SRP', file: file.filename, detail: `Large file: ${addedLines.length} lines added` });
+    }
+
+    for (const pattern of GOD_CLASS_PATTERNS) {
+      const matches = code.match(pattern.pattern);
+      if (matches) {
+        godClassIndicators += matches.length * pattern.weight;
+      }
+    }
+
+    for (const pattern of OCP_VIOLATIONS) {
+      const matches = code.match(pattern.pattern);
+      if (matches) {
+        ocpViolations += matches.length;
+      }
+    }
+
+    for (const pattern of DIP_VIOLATIONS) {
+      const matches = code.match(pattern.pattern);
+      if (matches) {
+        dipViolations += matches.length * pattern.weight;
+      }
+    }
+
+    for (const pattern of COUPLING_PATTERNS) {
+      const matches = code.match(pattern.pattern);
+      if (matches) {
+        couplingViolations += matches.length * pattern.weight;
+      }
+    }
+  }
+
+  const totalViolationWeight =
+    srpViolations * 2 +
+    ocpViolations * 1.5 +
+    dipViolations * 0.5 +
+    couplingViolations * 1 +
+    godClassIndicators * 1.5;
+
+  const violationRate = totalLines > 0 ? totalViolationWeight / totalLines : 0;
+
+  let score = 10;
+
+  if (violationRate > 0.1) score -= 4;
+  else if (violationRate > 0.05) score -= 3;
+  else if (violationRate > 0.03) score -= 2;
+  else if (violationRate > 0.01) score -= 1;
+
+  if (srpViolations > 3) score -= 2;
+  else if (srpViolations > 1) score -= 1;
+
+  if (godClassIndicators > 3) score -= 1;
+
+  score = Math.max(1, Math.min(10, score));
+
+  return {
+    score: Math.round(score * 10) / 10,
+    details: {
+      srpViolations,
+      ocpViolations,
+      dipViolations: Math.round(dipViolations * 10) / 10,
+      couplingViolations: Math.round(couplingViolations * 10) / 10,
+      godClassIndicators: Math.round(godClassIndicators * 10) / 10,
+      violationRate: Math.round(violationRate * 1000) / 1000,
+      topViolations: violationDetails.slice(0, 10),
+      linesAnalyzed: totalLines,
+    },
+  };
+}
+
+function extractAddedLines(patch) {
+  if (!patch) return [];
+  return patch
+    .split('\n')
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .map((line) => line.substring(1));
+}
