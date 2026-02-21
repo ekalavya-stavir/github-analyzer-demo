@@ -13,17 +13,14 @@ import { resolve } from 'node:path';
 import { parseCliArgs } from './src/cli/parser.js';
 import { initClient } from './src/github/client.js';
 import { fetchRepoData, fetchCommitDetail } from './src/github/fetcher.js';
-import { analyzeCodeQuality } from './src/analysis/quality/index.js';
 import { analyzeComplexity } from './src/analysis/complexity/index.js';
 import { analyzeDuplication } from './src/analysis/duplication/index.js';
 import { analyzeNPlusOne } from './src/analysis/nplusone/index.js';
 import { analyzeReadability } from './src/analysis/readability/index.js';
 import { analyzeSolid } from './src/analysis/solid/index.js';
-import { analyzeCopilotDependency } from './src/analysis/copilot/index.js';
 import { analyzePRSize } from './src/analysis/pr-size/index.js';
 import { analyzePRReview } from './src/analysis/pr-review/index.js';
 import { analyzeMaintainability } from './src/analysis/maintainability/index.js';
-import { analyzeStructural } from './src/analysis/structural/index.js';
 import {
   calculateFinalScore,
   generateStrengths,
@@ -98,15 +95,12 @@ async function main() {
     const reviewComments = contrib.reviewComments || [];
 
     const metrics = {
-      codeQuality: analyzeCodeQuality(patches),
       codeMaintainability: analyzeMaintainability(patches),
       prReview: analyzePRReview(reviewComments, contrib.reviewedPRs || []),
       duplication: analyzeDuplication(patches),
-      copilotDependency: analyzeCopilotDependency(commits, pullRequests, patches),
       prSize: analyzePRSize(pullRequests),
       solidPrinciples: analyzeSolid(patches),
       readability: analyzeReadability(patches),
-      structuralMaintainability: analyzeStructural(patches),
       cyclomaticComplexity: analyzeComplexity(patches),
       nplusone: analyzeNPlusOne(patches),
     };

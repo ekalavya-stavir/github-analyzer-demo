@@ -83,19 +83,16 @@ Each metric is scored from **0 to 10**, and the final score is scaled to **0-100
 
 ### Metrics & Weights
 
-| # | Metric                    | Weight | Description                                       |
-|---|---------------------------|--------|---------------------------------------------------|
-| 1 | Code Quality              | 12%    | Lint issues, static analysis warnings, code smells |
-| 2 | Cyclomatic Complexity     | 12%    | Decision points per function                       |
-| 3 | Code Maintainability      | 10%    | File size, function length, documentation coverage |
-| 4 | SOLID Principles          | 10%    | SRP, OCP, DIP violation detection                  |
-| 5 | Code Readability          | 10%    | Naming, nesting depth, comment density             |
-| 6 | N+1 Query Detection       | 9%     | ORM/SQL queries inside loops                       |
-| 7 | PR Size Discipline        | 8%     | Average PR size, penalizes large PRs               |
-| 8 | PR Review Contribution    | 8%     | Review quality, substantive feedback ratio          |
-| 9 | Duplicate Code            | 8%     | Token-based duplicate block detection              |
-| 10| Structural Maintainability| 8%     | Abstraction patterns, anti-patterns                |
-| 11| Copilot Dependency        | 5%     | AI/Copilot indicators in commits and code          |
+| # | Metric                    | Weight | Description                                                        |
+|---|---------------------------|--------|--------------------------------------------------------------------|
+| 1 | Code Readability          | 15%    | Naming, nesting, style anti-patterns, comment density              |
+| 2 | Cyclomatic Complexity     | 8%     | Decision points per function, dead code, promise chains            |
+| 3 | Code Maintainability      | 16%    | File size, function length, doc coverage, tech debt, abstractions  |
+| 4 | SOLID Principles          | 12%    | SRP, OCP, ISP, DIP violation detection                             |
+| 5 | N+1 Query Detection       | 12%    | ORM/SQL/API queries inside loops                                   |
+| 6 | PR Size Discipline        | 8%     | Average PR size, penalizes large PRs                               |
+| 7 | PR Review Contribution    | 14%    | Review quality, substantive feedback ratio                          |
+| 8 | Duplicate Code            | 15%    | Token-based duplicate block detection                              |
 
 ### Grading Scale
 
@@ -117,7 +114,7 @@ The generated report includes:
 - **Per-Developer Scorecards**:
   - Profile with GitHub link
   - Overall score with grade badge
-  - Radar chart covering all 11 metrics
+  - Radar chart covering all 8 metrics
   - Metric breakdown table with visual bars
   - Strengths section
   - Improvement suggestions
@@ -137,17 +134,14 @@ The generated report includes:
     │   ├── client.js                 # Octokit client with rate limiting
     │   └── fetcher.js                # GitHub API data fetching
     ├── analysis/
-    │   ├── quality/index.js          # Code quality analysis
     │   ├── complexity/index.js       # Cyclomatic complexity
     │   ├── duplication/index.js      # Duplicate code detection
     │   ├── nplusone/index.js         # N+1 query detection
     │   ├── readability/index.js      # Code readability
     │   ├── solid/index.js            # SOLID principles
-    │   ├── copilot/index.js          # Copilot dependency
     │   ├── pr-size/index.js          # PR size discipline
     │   ├── pr-review/index.js        # PR review quality
-    │   ├── maintainability/index.js  # Code maintainability
-    │   └── structural/index.js       # Structural maintainability
+    │   └── maintainability/index.js  # Code maintainability (includes structural)
     ├── scoring/
     │   └── engine.js                 # Scoring engine with weights
     └── report/

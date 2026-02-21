@@ -2,6 +2,7 @@
  * Cyclomatic Complexity Analyzer
  *
  * Detects decision points in code to estimate cyclomatic complexity.
+ * Also detects complexity anti-patterns: nested .then() chains, constant conditions, dead code.
  * Lower complexity = higher score.
  *
  * Score: 0-10 (10 = simplest code)
@@ -34,6 +35,13 @@ const FUNCTION_PATTERNS = [
   /\w+\s*\([^)]*\)\s*\{/g,
 ];
 
+const COMPLEXITY_ANTI_PATTERNS = [
+  { pattern: /\.then\s*\([^)]*\.then/g, weight: 1, name: 'nested-promise-chain' },
+  { pattern: /if\s*\(\s*true\s*\)/g, weight: 1.5, name: 'constant-condition-true' },
+  { pattern: /if\s*\(\s*false\s*\)/g, weight: 1.5, name: 'dead-code-false' },
+  { pattern: /\bwhile\s*\(\s*true\s*\)/g, weight: 0.5, name: 'infinite-loop' },
+];
+
 const CODE_FILE_EXTENSIONS = /\.(js|jsx|ts|tsx|py|java|go|rb|rs|c|cpp|cs|php)$/;
 
 export function analyzeComplexity(patches) {
@@ -49,6 +57,9 @@ export function analyzeComplexity(patches) {
   let totalDecisionPoints = 0;
   let totalFunctions = 0;
   let totalLines = 0;
+  let antiPatternWeight = 0;
+  let antiPatternCount = 0;
+  const antiPatternsByType = {};
   const fileComplexities = [];
 
   for (const file of codePatches) {
@@ -68,6 +79,15 @@ export function analyzeComplexity(patches) {
       if (matches) functions += matches.length;
     }
 
+    for (const rule of COMPLEXITY_ANTI_PATTERNS) {
+      const matches = code.match(rule.pattern);
+      if (matches) {
+        antiPatternCount += matches.length;
+        antiPatternWeight += matches.length * rule.weight;
+        antiPatternsByType[rule.name] = (antiPatternsByType[rule.name] || 0) + matches.length;
+      }
+    }
+
     functions = Math.max(functions, 1);
     totalDecisionPoints += decisionPoints;
     totalFunctions += functions;
@@ -84,6 +104,7 @@ export function analyzeComplexity(patches) {
   fileComplexities.sort((a, b) => b.complexity - a.complexity);
 
   const avgComplexity = totalFunctions > 0 ? totalDecisionPoints / totalFunctions : 0;
+  const antiPatternRate = totalLines > 0 ? antiPatternWeight / totalLines : 0;
 
   let score;
   if (avgComplexity <= 2) {
@@ -108,12 +129,23 @@ export function analyzeComplexity(patches) {
     score = 1;
   }
 
+  if (antiPatternRate > 0.02) score -= 1;
+  else if (antiPatternRate > 0.005) score -= 0.5;
+
+  score = Math.max(1, Math.min(10, score));
+
+  const antiPatterns = Object.entries(antiPatternsByType)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
   return {
     score: Math.round(score * 10) / 10,
     details: {
       avgComplexity: Math.round(avgComplexity * 10) / 10,
       totalDecisionPoints,
       functionsFound: totalFunctions,
+      antiPatterns,
+      antiPatternCount,
       linesAnalyzed: totalLines,
       topComplexFiles: fileComplexities.slice(0, 5),
     },

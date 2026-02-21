@@ -2,11 +2,12 @@
  * Code Readability Analyzer
  *
  * Metrics:
- * - Naming quality heuristics (camelCase, PascalCase, SCREAMING_CASE consistency)
+ * - Naming quality heuristics
  * - Comment density
  * - Nesting depth
  * - Function length
  * - Indentation consistency
+ * - Anti-patterns: var usage, console.log, loose equality, eval/alert, magic numbers, string setTimeout
  *
  * Score: 0-10 (10 = most readable)
  */
@@ -18,6 +19,18 @@ const POOR_NAMING_PATTERNS = [
   { pattern: /\b(tmp|temp|foo|bar|baz|xxx|yyy|data|obj|val|res|ret)\b/g, weight: 0.3, name: 'vague-name' },
   { pattern: /\b[a-z]+\d+\b/g, weight: 0.2, name: 'numbered-name' },
   { pattern: /\b[A-Z]{2,}[a-z]/g, weight: 0.1, name: 'inconsistent-case' },
+];
+
+const STYLE_ANTI_PATTERNS = [
+  { pattern: /\bvar\s+/g, weight: 0.8, name: 'var-usage' },
+  { pattern: /console\.(log|debug|info)\(/g, weight: 0.5, name: 'console-statement' },
+  { pattern: /==(?!=)/g, weight: 0.6, name: 'loose-equality' },
+  { pattern: /!=(?!=)/g, weight: 0.6, name: 'loose-inequality' },
+  { pattern: /\balert\s*\(/g, weight: 1, name: 'alert-call' },
+  { pattern: /\beval\s*\(/g, weight: 1.5, name: 'eval-usage' },
+  { pattern: /\bdocument\.write\s*\(/g, weight: 1.2, name: 'document-write' },
+  { pattern: /(?<!\w)\d{3,}(?!\w)/g, weight: 0.3, name: 'magic-number' },
+  { pattern: /setTimeout\s*\(\s*["']/g, weight: 1, name: 'string-timeout' },
 ];
 
 export function analyzeReadability(patches) {
@@ -40,10 +53,23 @@ export function analyzeReadability(patches) {
   let totalFunctions = 0;
   let inconsistentIndentation = 0;
   let totalIndentedLines = 0;
+  let styleIssueWeight = 0;
+  let styleIssueCount = 0;
+  const styleIssuesByType = {};
 
   for (const file of codePatches) {
     const addedLines = extractAddedLines(file.patch);
     totalLines += addedLines.length;
+    const code = addedLines.join('\n');
+
+    for (const rule of STYLE_ANTI_PATTERNS) {
+      const matches = code.match(rule.pattern);
+      if (matches) {
+        styleIssueCount += matches.length;
+        styleIssueWeight += matches.length * rule.weight;
+        styleIssuesByType[rule.name] = (styleIssuesByType[rule.name] || 0) + matches.length;
+      }
+    }
 
     let currentFunctionLength = 0;
     let inFunction = false;
@@ -108,32 +134,42 @@ export function analyzeReadability(patches) {
   const namingIssueRate = totalLines > 0 ? namingIssues / totalLines : 0;
   const indentInconsistencyRate = totalIndentedLines > 0
     ? inconsistentIndentation / totalIndentedLines : 0;
+  const styleIssueRate = totalLines > 0 ? styleIssueWeight / totalLines : 0;
 
   let score = 10;
 
-  if (commentDensity < 0.02) score -= 1;
+  if (commentDensity < 0.02) score -= 0.8;
   else if (commentDensity < 0.05) score -= 0.3;
-  else if (commentDensity > 0.4) score -= 0.5;
+  else if (commentDensity > 0.4) score -= 0.4;
 
-  if (maxNestingDepth > 6) score -= 2;
-  else if (maxNestingDepth > 4) score -= 1;
-  else if (maxNestingDepth > 3) score -= 0.5;
+  if (maxNestingDepth > 6) score -= 1.5;
+  else if (maxNestingDepth > 4) score -= 0.8;
+  else if (maxNestingDepth > 3) score -= 0.4;
 
-  if (avgNesting > 3) score -= 1.5;
-  else if (avgNesting > 2) score -= 0.8;
+  if (avgNesting > 3) score -= 1.2;
+  else if (avgNesting > 2) score -= 0.6;
 
-  if (longFunctionRatio > 0.5) score -= 2;
-  else if (longFunctionRatio > 0.3) score -= 1;
-  else if (longFunctionRatio > 0.1) score -= 0.5;
+  if (longFunctionRatio > 0.5) score -= 1.5;
+  else if (longFunctionRatio > 0.3) score -= 0.8;
+  else if (longFunctionRatio > 0.1) score -= 0.4;
 
-  if (namingIssueRate > 0.1) score -= 2;
-  else if (namingIssueRate > 0.05) score -= 1;
-  else if (namingIssueRate > 0.02) score -= 0.5;
+  if (namingIssueRate > 0.1) score -= 1.5;
+  else if (namingIssueRate > 0.05) score -= 0.8;
+  else if (namingIssueRate > 0.02) score -= 0.4;
 
-  if (indentInconsistencyRate > 0.2) score -= 1.5;
-  else if (indentInconsistencyRate > 0.1) score -= 0.8;
+  if (indentInconsistencyRate > 0.2) score -= 1;
+  else if (indentInconsistencyRate > 0.1) score -= 0.5;
+
+  if (styleIssueRate > 0.15) score -= 1.5;
+  else if (styleIssueRate > 0.08) score -= 1;
+  else if (styleIssueRate > 0.03) score -= 0.5;
+  else if (styleIssueRate > 0.01) score -= 0.2;
 
   score = Math.max(1, Math.min(10, score));
+
+  const styleIssues = Object.entries(styleIssuesByType)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
 
   return {
     score: Math.round(score * 10) / 10,
@@ -146,6 +182,9 @@ export function analyzeReadability(patches) {
       longFunctionRatio: Math.round(longFunctionRatio * 100) / 100,
       namingIssueRate: Math.round(namingIssueRate * 1000) / 1000,
       indentationInconsistency: Math.round(indentInconsistencyRate * 100) / 100,
+      styleIssues: styleIssues.slice(0, 8),
+      styleIssueCount,
+      styleIssueRate: Math.round(styleIssueRate * 1000) / 1000,
       linesAnalyzed: totalLines,
     },
   };

@@ -39,6 +39,11 @@ const DIP_VIOLATIONS = [
   { pattern: /import\s+.*from\s+['"]\.{1,2}\//g, weight: 0.05, name: 'relative-import' },
 ];
 
+const ISP_VIOLATIONS = [
+  { pattern: /function\s*\([^)]{100,}\)/g, weight: 1, name: 'long-param-list' },
+  { pattern: /\(\s*\{[^}]{120,}\}\s*\)/g, weight: 0.8, name: 'large-destructured-param' },
+];
+
 const COUPLING_PATTERNS = [
   { pattern: /\bglobal\b|\bwindow\b|\bprocess\.env\b/g, weight: 0.5, name: 'global-access' },
   { pattern: /\.\w+\.\w+\.\w+\.\w+/g, weight: 0.4, name: 'deep-property-chain' },
@@ -57,6 +62,7 @@ export function analyzeSolid(patches) {
   let totalLines = 0;
   let srpViolations = 0;
   let ocpViolations = 0;
+  let ispViolations = 0;
   let dipViolations = 0;
   let couplingViolations = 0;
   let godClassIndicators = 0;
@@ -96,6 +102,13 @@ export function analyzeSolid(patches) {
       }
     }
 
+    for (const pattern of ISP_VIOLATIONS) {
+      const matches = code.match(pattern.pattern);
+      if (matches) {
+        ispViolations += matches.length * pattern.weight;
+      }
+    }
+
     for (const pattern of DIP_VIOLATIONS) {
       const matches = code.match(pattern.pattern);
       if (matches) {
@@ -114,6 +127,7 @@ export function analyzeSolid(patches) {
   const totalViolationWeight =
     srpViolations * 2 +
     ocpViolations * 1.5 +
+    ispViolations * 1 +
     dipViolations * 0.5 +
     couplingViolations * 1 +
     godClassIndicators * 1.5;
@@ -139,6 +153,7 @@ export function analyzeSolid(patches) {
     details: {
       srpViolations,
       ocpViolations,
+      ispViolations: Math.round(ispViolations * 10) / 10,
       dipViolations: Math.round(dipViolations * 10) / 10,
       couplingViolations: Math.round(couplingViolations * 10) / 10,
       godClassIndicators: Math.round(godClassIndicators * 10) / 10,

@@ -7,31 +7,25 @@
  */
 
 export const DEFAULT_WEIGHTS = {
-  codeQuality: 0.12,
-  codeMaintainability: 0.10,
-  prReview: 0.08,
-  duplication: 0.08,
-  copilotDependency: 0.05,
+  readability: 0.15,
+  cyclomaticComplexity: 0.08,
+  codeMaintainability: 0.16,
+  solidPrinciples: 0.12,
+  nplusone: 0.12,
   prSize: 0.08,
-  solidPrinciples: 0.10,
-  readability: 0.10,
-  structuralMaintainability: 0.08,
-  cyclomaticComplexity: 0.12,
-  nplusone: 0.09,
+  prReview: 0.14,
+  duplication: 0.15,
 };
 
 export const METRIC_LABELS = {
-  codeQuality: 'Code Quality',
+  readability: 'Code Readability',
+  cyclomaticComplexity: 'Cyclomatic Complexity',
   codeMaintainability: 'Code Maintainability',
+  solidPrinciples: 'SOLID Principles',
+  nplusone: 'N+1 Query Detection',
+  prSize: 'PR Size Discipline',
   prReview: 'PR Review Contribution',
   duplication: 'Duplicate Code',
-  copilotDependency: 'Copilot Dependency',
-  prSize: 'PR Size Discipline',
-  solidPrinciples: 'SOLID Principles',
-  readability: 'Code Readability',
-  structuralMaintainability: 'Structural Maintainability',
-  cyclomaticComplexity: 'Cyclomatic Complexity',
-  nplusone: 'N+1 Query Detection',
 };
 
 export function calculateFinalScore(metricScores, weights = DEFAULT_WEIGHTS) {
@@ -92,34 +86,28 @@ export function generateImprovements(metricScores) {
 
 function getStrengthDescription(metric, data) {
   const descriptions = {
-    codeQuality: `Clean code with only ${data.details?.totalIssues || 0} issues detected.`,
-    codeMaintainability: `Well-structured code with maintainability index of ${data.details?.maintainabilityIndex || 'N/A'}.`,
+    readability: `Readable code with ${data.details?.commentDensity || 0} comment density.`,
+    cyclomaticComplexity: `Low complexity with average ${data.details?.avgComplexity || 0} per function.`,
+    codeMaintainability: `Well-structured code with MI of ${data.details?.maintainabilityIndex || 'N/A'} and good structural organization.`,
+    solidPrinciples: `Good adherence to SOLID principles.`,
+    nplusone: `No N+1 query patterns detected.`,
+    prSize: `Well-sized PRs with median ${data.details?.medianChangesPerPR || 0} changes.`,
     prReview: `Active reviewer with ${data.details?.substantiveComments || 0} substantive comments.`,
     duplication: `Minimal code duplication (${data.details?.duplicationRatio || 0} ratio).`,
-    copilotDependency: `Low AI dependency indicators (${data.details?.totalIndicators || 0} found).`,
-    prSize: `Well-sized PRs with median ${data.details?.medianChangesPerPR || 0} changes.`,
-    solidPrinciples: `Good adherence to SOLID principles.`,
-    readability: `Readable code with ${data.details?.commentDensity || 0} comment density.`,
-    structuralMaintainability: `Good structural organization with clear abstractions.`,
-    cyclomaticComplexity: `Low complexity with average ${data.details?.avgComplexity || 0} per function.`,
-    nplusone: `No N+1 query patterns detected.`,
   };
   return descriptions[metric] || 'Good performance in this area.';
 }
 
 function getImprovementSuggestion(metric, data) {
   const suggestions = {
-    codeQuality: `Address ${data.details?.totalIssues || 'the'} code quality issues. Consider using a linter.`,
-    codeMaintainability: `Reduce file sizes and function lengths. Add documentation to public APIs.`,
+    readability: `Improve naming, reduce nesting depth (max: ${data.details?.maxNestingDepth || 0}), add comments.`,
+    cyclomaticComplexity: `Reduce function complexity (avg: ${data.details?.avgComplexity || 0}). Break complex logic into smaller functions.`,
+    codeMaintainability: `Reduce file sizes, add documentation, and improve code organization with clear abstractions.`,
+    solidPrinciples: `Address ${data.details?.srpViolations || 0} SRP violations. Reduce class/module responsibilities.`,
+    nplusone: `Fix ${data.details?.totalViolations || 0} potential N+1 query patterns. Use eager loading or batching.`,
+    prSize: `Break down large PRs (median: ${data.details?.medianChangesPerPR || 0} changes) into smaller, focused ones.`,
     prReview: `Provide more detailed, substantive review feedback on PRs.`,
     duplication: `Reduce code duplication (${data.details?.duplicateBlocks || 0} blocks found). Extract shared logic.`,
-    copilotDependency: `Review AI-generated code more carefully for correctness and maintainability.`,
-    prSize: `Break down large PRs (median: ${data.details?.medianChangesPerPR || 0} changes) into smaller, focused ones.`,
-    solidPrinciples: `Address ${data.details?.srpViolations || 0} SRP violations. Reduce class/module responsibilities.`,
-    readability: `Improve naming, reduce nesting depth (max: ${data.details?.maxNestingDepth || 0}), add comments.`,
-    structuralMaintainability: `Improve code organization. Extract common patterns into reusable modules.`,
-    cyclomaticComplexity: `Reduce function complexity (avg: ${data.details?.avgComplexity || 0}). Break complex logic into smaller functions.`,
-    nplusone: `Fix ${data.details?.totalViolations || 0} potential N+1 query patterns. Use eager loading or batching.`,
   };
   return suggestions[metric] || 'Focus on improving this metric.';
 }
