@@ -111,6 +111,12 @@ export function analyzeNPlusOne(patches) {
     score: Math.round(score * 10) / 10,
     details: {
       violations: violations.slice(0, 20),
+      evidence: violations.slice(0, 15).map((v) => ({
+        file: v.file,
+        line: v.line,
+        snippet: v.snippet,
+        issue: v.type,
+      })),
       totalViolations,
       linesAnalyzed: totalLines,
       violationsPerKLOC: Math.round(violationsPerKLOC * 10) / 10,

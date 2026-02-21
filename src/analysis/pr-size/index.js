@@ -88,6 +88,15 @@ export function analyzePRSize(pullRequests) {
           title: pr.title?.substring(0, 60),
           changes: pr.totalChanges,
         })),
+      evidence: prSizes
+        .sort((a, b) => b.totalChanges - a.totalChanges)
+        .slice(0, 15)
+        .map((pr) => ({
+          file: `PR #${pr.number}`,
+          line: 0,
+          snippet: `${pr.title?.substring(0, 80)} — +${pr.additions}/-${pr.deletions} (${pr.category})`,
+          issue: pr.category === 'xl' ? 'xl-pr' : pr.category === 'large' ? 'large-pr' : `${pr.category}-pr`,
+        })),
     },
   };
 }

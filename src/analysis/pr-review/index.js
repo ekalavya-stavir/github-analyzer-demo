@@ -1,141 +1,99 @@
 /**
  * PR Review Contribution Analyzer
  *
- * Evaluates the quality and quantity of code review feedback given by a developer.
- * - Number of review comments given
- * - Average comment length
- * - Filters trivial comments (LGTM, etc.)
- * - Substantive feedback ratio
+ * Two equally-weighted sub-scores (50/50):
+ *
+ * 1. PR Review Ratio
+ *    - actual = PRs this developer reviewed / total PRs in duration
+ *    - expected = total developers / total PRs in duration
+ *    - ratio >= expected → full score (10)
+ *    - ratio < expected → proportional (actual / expected * 10)
+ *
+ * 2. Comment Density
+ *    - actual = comments given / total lines changed in PRs they reviewed
+ *    - expected = 1 comment per 50 lines (0.02)
+ *    - ratio >= expected → full score (10)
+ *    - ratio < expected → proportional (actual / expected * 10)
  *
  * Score: 0-10 (10 = excellent reviewer)
  */
 
-const TRIVIAL_PATTERNS = [
-  /^\s*lgtm\s*[.!]?\s*$/i,
-  /^\s*looks?\s+good\s*(to\s+me)?\s*[.!]?\s*$/i,
-  /^\s*\+1\s*$/,
-  /^\s*nice\s*[.!]?\s*$/i,
-  /^\s*great\s*[.!]?\s*$/i,
-  /^\s*thanks?\s*[.!]?\s*$/i,
-  /^\s*thank\s+you\s*[.!]?\s*$/i,
-  /^\s*approved?\s*[.!]?\s*$/i,
-  /^\s*shipit\s*[.!]?\s*$/i,
-  /^\s*:(\+1|thumbsup|shipit|rocket|100):\s*$/i,
-  /^\s*👍\s*$/,
-  /^\s*🚀\s*$/,
-  /^\s*✅\s*$/,
-  /^\s*ok\s*[.!]?\s*$/i,
-  /^\s*nit:?\s*$/i,
-  /^\s*done\s*[.!]?\s*$/i,
-];
+const EXPECTED_COMMENTS_PER_LINE = 1 / 50; // 0.02
 
-const SUBSTANTIVE_INDICATORS = [
-  /\bwhy\b/i,
-  /\bhow\b/i,
-  /\bshould\b/i,
-  /\bcould\b/i,
-  /\bwould\b/i,
-  /\bsuggest\b/i,
-  /\bconsider\b/i,
-  /\binstead\b/i,
-  /\balternative\b/i,
-  /\brefactor\b/i,
-  /\bperformance\b/i,
-  /\bsecurity\b/i,
-  /\bbug\b/i,
-  /\bedge\s*case\b/i,
-  /\brace\s*condition\b/i,
-  /\bmemory\b/i,
-  /\bnull\s*check\b/i,
-  /\berror\s*handl/i,
-  /\btest\b/i,
-  /\bvalidat/i,
-  /```/,
-];
+export function analyzePRReview(developerData, baseStats) {
+  const { prsReviewed, reviewComments, reviewedPRsLinesChanged } = developerData;
+  const { totalPRs, totalDevelopers } = baseStats;
 
-export function analyzePRReview(reviewComments, pullRequests) {
-  if (!reviewComments || reviewComments.length === 0) {
+  if (totalPRs === 0 || totalDevelopers === 0) {
     return {
       score: 5,
-      details: {
-        totalComments: 0,
-        substantiveComments: 0,
-        trivialComments: 0,
-        note: 'No review comments found',
-      },
+      details: { note: 'Insufficient data to evaluate', totalPRs, totalDevelopers },
     };
   }
 
-  let totalComments = reviewComments.length;
-  let trivialCount = 0;
-  let substantiveCount = 0;
-  let totalLength = 0;
-  let substantiveLength = 0;
+  // --- Sub-score 1: PR Review Ratio ---
+  const actualReviewRatio = prsReviewed / totalPRs;
+  const expectedReviewRatio = totalDevelopers / totalPRs;
+  const cappedExpectedReviewRatio = Math.min(expectedReviewRatio, 1);
 
-  for (const comment of reviewComments) {
-    const body = (comment.body || '').trim();
-    const length = body.length;
-    totalLength += length;
+  let reviewRatioScore;
+  if (cappedExpectedReviewRatio <= 0) {
+    reviewRatioScore = 10;
+  } else if (actualReviewRatio >= cappedExpectedReviewRatio) {
+    reviewRatioScore = 10;
+  } else {
+    reviewRatioScore = (actualReviewRatio / cappedExpectedReviewRatio) * 10;
+  }
+  reviewRatioScore = Math.max(0, Math.min(10, reviewRatioScore));
 
-    const isTrivial = TRIVIAL_PATTERNS.some((p) => p.test(body)) || length < 10;
+  // --- Sub-score 2: Comment Density ---
+  const totalLinesReviewed = reviewedPRsLinesChanged;
+  let commentDensityScore;
 
-    if (isTrivial) {
-      trivialCount++;
+  if (totalLinesReviewed === 0) {
+    commentDensityScore = prsReviewed > 0 ? 5 : 0;
+  } else {
+    const actualCommentRatio = reviewComments / totalLinesReviewed;
+    if (actualCommentRatio >= EXPECTED_COMMENTS_PER_LINE) {
+      commentDensityScore = 10;
     } else {
-      const hasSubstance = SUBSTANTIVE_INDICATORS.some((p) => p.test(body));
-      if (hasSubstance || length > 50) {
-        substantiveCount++;
-        substantiveLength += length;
-      } else {
-        trivialCount++;
-      }
+      commentDensityScore = (actualCommentRatio / EXPECTED_COMMENTS_PER_LINE) * 10;
     }
   }
+  commentDensityScore = Math.max(0, Math.min(10, commentDensityScore));
 
-  const avgCommentLength = totalComments > 0 ? totalLength / totalComments : 0;
-  const avgSubstantiveLength = substantiveCount > 0 ? substantiveLength / substantiveCount : 0;
-  const substantiveRatio = totalComments > 0 ? substantiveCount / totalComments : 0;
-
-  const reviewsGiven = pullRequests
-    ? pullRequests.reduce((count, pr) => {
-        const reviews = pr.reviews || [];
-        return count + reviews.filter((r) => r.state !== 'PENDING').length;
-      }, 0)
-    : 0;
-
-  let score;
-
-  if (totalComments === 0) {
-    score = 3;
-  } else {
-    score = 5;
-
-    if (substantiveRatio > 0.8) score += 2.5;
-    else if (substantiveRatio > 0.6) score += 1.5;
-    else if (substantiveRatio > 0.4) score += 0.5;
-    else score -= 1;
-
-    if (avgSubstantiveLength > 200) score += 1;
-    else if (avgSubstantiveLength > 100) score += 0.5;
-    else if (avgSubstantiveLength < 30) score -= 0.5;
-
-    if (totalComments > 20) score += 1;
-    else if (totalComments > 10) score += 0.5;
-    else if (totalComments < 3) score -= 0.5;
-  }
-
-  score = Math.max(1, Math.min(10, score));
+  // --- Combined: 50/50 blend ---
+  const score = (reviewRatioScore + commentDensityScore) / 2;
 
   return {
     score: Math.round(score * 10) / 10,
     details: {
-      totalComments,
-      substantiveComments: substantiveCount,
-      trivialComments: trivialCount,
-      substantiveRatio: Math.round(substantiveRatio * 100) / 100,
-      avgCommentLength: Math.round(avgCommentLength),
-      avgSubstantiveLength: Math.round(avgSubstantiveLength),
-      reviewsGiven,
+      reviewRatioScore: Math.round(reviewRatioScore * 10) / 10,
+      commentDensityScore: Math.round(commentDensityScore * 10) / 10,
+      prsReviewed,
+      totalPRs,
+      actualReviewRatio: Math.round(actualReviewRatio * 1000) / 1000,
+      expectedReviewRatio: Math.round(cappedExpectedReviewRatio * 1000) / 1000,
+      reviewComments,
+      totalLinesReviewed,
+      actualCommentRatio: totalLinesReviewed > 0
+        ? Math.round((reviewComments / totalLinesReviewed) * 10000) / 10000
+        : 0,
+      expectedCommentRatio: EXPECTED_COMMENTS_PER_LINE,
+      evidence: [
+        {
+          file: 'Review Ratio',
+          line: 0,
+          snippet: `Reviewed ${prsReviewed}/${totalPRs} PRs (${Math.round(actualReviewRatio * 100)}%), expected ${Math.round(cappedExpectedReviewRatio * 100)}%`,
+          issue: reviewRatioScore >= 10 ? 'meets-target' : 'below-target',
+        },
+        {
+          file: 'Comment Density',
+          line: 0,
+          snippet: `${reviewComments} comments on ${totalLinesReviewed} lines reviewed (${totalLinesReviewed > 0 ? Math.round((reviewComments / totalLinesReviewed) * 10000) / 100 : 0} per 100 LOC, expected 2.0)`,
+          issue: commentDensityScore >= 10 ? 'meets-target' : 'below-target',
+        },
+      ],
     },
   };
 }

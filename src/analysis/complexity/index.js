@@ -61,6 +61,7 @@ export function analyzeComplexity(patches) {
   let antiPatternCount = 0;
   const antiPatternsByType = {};
   const fileComplexities = [];
+  const evidence = [];
 
   for (const file of codePatches) {
     const addedLines = extractAddedLines(file.patch);
@@ -68,9 +69,17 @@ export function analyzeComplexity(patches) {
     totalLines += addedLines.length;
 
     let decisionPoints = 0;
-    for (const pattern of DECISION_PATTERNS) {
-      const matches = code.match(pattern);
-      if (matches) decisionPoints += matches.length;
+    for (let lineIndex = 0; lineIndex < addedLines.length; lineIndex++) {
+      const line = addedLines[lineIndex];
+      let lineDecisionPoints = 0;
+      for (const pattern of DECISION_PATTERNS) {
+        const matches = line.match(pattern);
+        if (matches) lineDecisionPoints += matches.length;
+      }
+      decisionPoints += lineDecisionPoints;
+      if (lineDecisionPoints >= 2) {
+        evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: 'high-complexity-line' });
+      }
     }
 
     let functions = 0;
@@ -79,12 +88,16 @@ export function analyzeComplexity(patches) {
       if (matches) functions += matches.length;
     }
 
-    for (const rule of COMPLEXITY_ANTI_PATTERNS) {
-      const matches = code.match(rule.pattern);
-      if (matches) {
-        antiPatternCount += matches.length;
-        antiPatternWeight += matches.length * rule.weight;
-        antiPatternsByType[rule.name] = (antiPatternsByType[rule.name] || 0) + matches.length;
+    for (let lineIndex = 0; lineIndex < addedLines.length; lineIndex++) {
+      const line = addedLines[lineIndex];
+      for (const rule of COMPLEXITY_ANTI_PATTERNS) {
+        const matches = line.match(rule.pattern);
+        if (matches) {
+          antiPatternCount += matches.length;
+          antiPatternWeight += matches.length * rule.weight;
+          antiPatternsByType[rule.name] = (antiPatternsByType[rule.name] || 0) + matches.length;
+          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: rule.name });
+        }
       }
     }
 
@@ -148,6 +161,7 @@ export function analyzeComplexity(patches) {
       antiPatternCount,
       linesAnalyzed: totalLines,
       topComplexFiles: fileComplexities.slice(0, 5),
+      evidence: evidence.slice(0, 15),
     },
   };
 }

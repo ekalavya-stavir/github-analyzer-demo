@@ -89,23 +89,31 @@ export function analyzeMaintainability(patches) {
   const antiPatternDetails = [];
   const abstractionDetails = [];
   const directoryStructure = new Map();
+  const evidence = [];
 
   for (const file of codePatches) {
     const addedLines = extractAddedLines(file.patch);
     totalLines += addedLines.length;
     const code = addedLines.join('\n');
 
-    if (addedLines.length > 300) longFiles++;
+    if (addedLines.length > 300) {
+      longFiles++;
+      evidence.push({ file: file.filename, line: 1, snippet: `File has ${addedLines.length} lines`, issue: 'large-file' });
+    }
 
     const dir = file.filename.split('/').slice(0, -1).join('/') || '/';
     directoryStructure.set(dir, (directoryStructure.get(dir) || 0) + 1);
 
-    for (const rule of TECH_DEBT_PATTERNS) {
-      const matches = code.match(rule.pattern);
-      if (matches) {
-        techDebtCount += matches.length;
-        techDebtWeight += matches.length * rule.weight;
-        techDebtByType[rule.name] = (techDebtByType[rule.name] || 0) + matches.length;
+    for (let lineIndex = 0; lineIndex < addedLines.length; lineIndex++) {
+      const line = addedLines[lineIndex];
+      for (const rule of TECH_DEBT_PATTERNS) {
+        const matches = line.match(rule.pattern);
+        if (matches) {
+          techDebtCount += matches.length;
+          techDebtWeight += matches.length * rule.weight;
+          techDebtByType[rule.name] = (techDebtByType[rule.name] || 0) + matches.length;
+          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: rule.name });
+        }
       }
     }
 
@@ -117,11 +125,15 @@ export function analyzeMaintainability(patches) {
       }
     }
 
-    for (const pattern of STRUCTURAL_ANTI_PATTERNS) {
-      const matches = code.match(pattern.pattern);
-      if (matches) {
-        antiPatternScore += matches.length * pattern.weight;
-        antiPatternDetails.push({ type: pattern.name, file: file.filename, count: matches.length });
+    for (let lineIndex = 0; lineIndex < addedLines.length; lineIndex++) {
+      const line = addedLines[lineIndex];
+      for (const pattern of STRUCTURAL_ANTI_PATTERNS) {
+        const matches = line.match(pattern.pattern);
+        if (matches) {
+          antiPatternScore += matches.length * pattern.weight;
+          antiPatternDetails.push({ type: pattern.name, file: file.filename, count: matches.length });
+          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
+        }
       }
     }
 
@@ -260,6 +272,7 @@ export function analyzeMaintainability(patches) {
       totalFiles,
       totalFunctions,
       totalLines,
+      evidence: evidence.slice(0, 15),
     },
   };
 }

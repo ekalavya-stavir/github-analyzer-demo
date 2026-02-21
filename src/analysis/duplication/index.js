@@ -104,6 +104,12 @@ export function analyzeDuplication(patches) {
       totalLines,
       duplicationRatio: Math.round(duplicationRatio * 1000) / 1000,
       examples: duplicateExamples,
+      evidence: duplicateExamples.slice(0, 15).map((ex) => ({
+        file: ex.files.join(', '),
+        line: 0,
+        snippet: ex.snippet.substring(0, 120),
+        issue: `duplicate-block (${ex.occurrences}x across ${ex.files.length} file${ex.files.length > 1 ? 's' : ''})`,
+      })),
     },
   };
 }

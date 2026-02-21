@@ -83,6 +83,10 @@ async function main() {
   await enrichContributorPatches(contributorMap, repoDataList);
 
   console.log('📊 Analyzing contributions...\n');
+
+  const baseStats = computeBaseStats(repoDataList, contributorLogins.length);
+  console.log(`  Base stats: ${baseStats.totalPRs} PRs, ${baseStats.totalLinesChanged} lines changed, ${baseStats.totalDevelopers} developers\n`);
+
   const developerScores = [];
 
   for (const login of contributorLogins) {
@@ -92,11 +96,21 @@ async function main() {
     const patches = contrib.patches || [];
     const commits = contrib.commits || [];
     const pullRequests = contrib.authoredPRs || [];
-    const reviewComments = contrib.reviewComments || [];
+
+    const reviewedPRs = contrib.reviewedPRs || [];
+    const prsReviewed = new Set(reviewedPRs.map((pr) => pr.number)).size;
+    const reviewComments = (contrib.reviewComments || []).length;
+    const reviewedPRsLinesChanged = reviewedPRs.reduce(
+      (sum, pr) => sum + (pr.additions || 0) + (pr.deletions || 0),
+      0
+    );
 
     const metrics = {
       codeMaintainability: analyzeMaintainability(patches),
-      prReview: analyzePRReview(reviewComments, contrib.reviewedPRs || []),
+      prReview: analyzePRReview(
+        { prsReviewed, reviewComments, reviewedPRsLinesChanged },
+        baseStats
+      ),
       duplication: analyzeDuplication(patches),
       prSize: analyzePRSize(pullRequests),
       solidPrinciples: analyzeSolid(patches),
@@ -147,6 +161,20 @@ async function main() {
   console.log(`   File: ${outputPath}`);
   console.log(`   Contributors: ${developerScores.length}`);
   console.log(`   Time: ${elapsed}s\n`);
+}
+
+function computeBaseStats(repoDataList, totalDevelopers) {
+  let totalPRs = 0;
+  let totalLinesChanged = 0;
+
+  for (const repo of repoDataList) {
+    for (const pr of repo.pullRequests) {
+      totalPRs++;
+      totalLinesChanged += (pr.additions || 0) + (pr.deletions || 0);
+    }
+  }
+
+  return { totalPRs, totalLinesChanged, totalDevelopers };
 }
 
 function buildContributorMap(repoDataList) {

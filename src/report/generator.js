@@ -171,9 +171,11 @@ function renderDeveloperCard(dev, index) {
               ${Object.entries(METRIC_LABELS).map(([key, label]) => {
                 const m = metrics[key] || { score: 0 };
                 const barColor = getGrade(m.score * 10).color;
+                const evidenceItems = m.details?.evidence || [];
+                const hasEvidence = evidenceItems.length > 0;
                 return `
                 <tr>
-                  <td>${label}</td>
+                  <td>${hasEvidence ? `<span class="evidence-toggle" onclick="toggleSection('evidence-${index}-${key}')" title="View evidence">${label} <small>▶</small></span>` : label}</td>
                   <td class="score-cell" style="color: ${barColor}">${m.score}/10</td>
                   <td><div class="metric-bar"><div class="metric-bar-fill" style="width: ${m.score * 10}%; background: ${barColor}"></div></div></td>
                 </tr>`;
@@ -183,9 +185,9 @@ function renderDeveloperCard(dev, index) {
         </div>
       </div>
 
+      ${renderEvidencePanels(metrics, index)}
       ${renderStrengths(dev.strengths)}
       ${renderImprovements(dev.improvements)}
-      ${renderNPlusOneViolations(metrics.nplusone)}
 
       <script>
         drawRadarChart('${canvasId}', ${JSON.stringify(
@@ -231,25 +233,29 @@ function renderImprovements(improvements) {
     </div>`;
 }
 
-function renderNPlusOneViolations(nplusoneData) {
-  if (!nplusoneData?.details?.violations || nplusoneData.details.violations.length === 0) {
-    return '';
-  }
+function renderEvidencePanels(metrics, devIndex) {
+  return Object.entries(METRIC_LABELS).map(([key, label]) => {
+    const m = metrics[key] || { score: 0 };
+    const evidenceItems = m.details?.evidence || [];
+    if (evidenceItems.length === 0) return '';
 
-  const violations = nplusoneData.details.violations;
-  return `
-    <div class="nplusone-section">
-      <h4>⚠️ N+1 Query Violations (${violations.length} found)</h4>
-      <div class="violations-list">
-        ${violations.map((v) => `
-          <div class="violation-item">
-            <div class="violation-file"><code>${escapeHtml(v.file)}</code> : line ${v.line}</div>
-            <div class="violation-type">Type: <strong>${escapeHtml(v.type)}</strong> (loop starts at line ${v.loopStartLine})</div>
-            <pre class="violation-snippet">${escapeHtml(v.snippet)}</pre>
+    return `
+    <div class="evidence-panel" id="evidence-${devIndex}-${key}">
+      <h4>🔎 ${escapeHtml(label)} — Evidence (${evidenceItems.length} item${evidenceItems.length > 1 ? 's' : ''})</h4>
+      <div class="evidence-list">
+        ${evidenceItems.map((ev) => `
+          <div class="evidence-item">
+            <div class="evidence-header">
+              <code class="evidence-file">${escapeHtml(ev.file)}</code>
+              ${ev.line > 0 ? `<span class="evidence-line">line ${ev.line}</span>` : ''}
+              <span class="evidence-issue">${escapeHtml(ev.issue)}</span>
+            </div>
+            ${ev.snippet ? `<pre class="evidence-snippet">${escapeHtml(ev.snippet)}</pre>` : ''}
           </div>
         `).join('')}
       </div>
     </div>`;
+  }).join('\n');
 }
 
 function renderFooter(generatedAt) {
@@ -683,44 +689,96 @@ function getStyles() {
       font-size: 0.8rem;
     }
 
-    .violations-list {
+    .evidence-toggle {
+      cursor: pointer;
+      color: var(--accent);
+      transition: color 0.2s;
+    }
+
+    .evidence-toggle:hover {
+      color: #60a5fa;
+    }
+
+    .evidence-toggle small {
+      font-size: 0.65rem;
+      transition: transform 0.2s;
+      display: inline-block;
+    }
+
+    .evidence-panel {
+      display: none;
+      margin-top: 16px;
+      background: rgba(59, 130, 246, 0.04);
+      border: 1px solid rgba(59, 130, 246, 0.15);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .evidence-panel.open {
+      display: block;
+    }
+
+    .evidence-panel h4 {
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+      color: var(--text-muted);
+    }
+
+    .evidence-list {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
     }
 
-    .violation-item {
-      background: rgba(239, 68, 68, 0.05);
-      border: 1px solid rgba(239, 68, 68, 0.2);
-      border-radius: 8px;
-      padding: 12px;
+    .evidence-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
     }
 
-    .violation-file {
-      font-size: 0.85rem;
+    .evidence-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 0.82rem;
       margin-bottom: 4px;
     }
 
-    .violation-file code {
-      background: var(--bg);
-      padding: 2px 6px;
+    .evidence-file {
+      background: rgba(59, 130, 246, 0.12);
+      padding: 2px 7px;
       border-radius: 4px;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
+      color: var(--accent);
     }
 
-    .violation-type {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      margin-bottom: 6px;
+    .evidence-line {
+      color: var(--text-dim);
+      font-size: 0.75rem;
     }
 
-    .violation-snippet {
-      background: var(--bg);
+    .evidence-issue {
+      background: rgba(245, 158, 11, 0.12);
+      color: var(--amber);
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 0.73rem;
+      font-weight: 500;
+    }
+
+    .evidence-snippet {
+      background: rgba(15, 23, 42, 0.6);
       padding: 8px 12px;
       border-radius: 6px;
-      font-size: 0.78rem;
+      font-size: 0.76rem;
       overflow-x: auto;
       color: var(--text-muted);
+      margin-top: 4px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
     }
 
     .footer {

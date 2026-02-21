@@ -92,7 +92,7 @@ function getStrengthDescription(metric, data) {
     solidPrinciples: `Good adherence to SOLID principles.`,
     nplusone: `No N+1 query patterns detected.`,
     prSize: `Well-sized PRs with median ${data.details?.medianChangesPerPR || 0} changes.`,
-    prReview: `Active reviewer with ${data.details?.substantiveComments || 0} substantive comments.`,
+    prReview: `Strong reviewer — reviewed ${data.details?.prsReviewed || 0} PRs with ${data.details?.reviewComments || 0} comments.`,
     duplication: `Minimal code duplication (${data.details?.duplicationRatio || 0} ratio).`,
   };
   return descriptions[metric] || 'Good performance in this area.';
@@ -106,7 +106,7 @@ function getImprovementSuggestion(metric, data) {
     solidPrinciples: `Address ${data.details?.srpViolations || 0} SRP violations. Reduce class/module responsibilities.`,
     nplusone: `Fix ${data.details?.totalViolations || 0} potential N+1 query patterns. Use eager loading or batching.`,
     prSize: `Break down large PRs (median: ${data.details?.medianChangesPerPR || 0} changes) into smaller, focused ones.`,
-    prReview: `Provide more detailed, substantive review feedback on PRs.`,
+    prReview: `Review more PRs (${data.details?.prsReviewed || 0}/${data.details?.totalPRs || '?'}) and add more comments (${data.details?.reviewComments || 0} given, expect 1 per 50 lines).`,
     duplication: `Reduce code duplication (${data.details?.duplicateBlocks || 0} blocks found). Extract shared logic.`,
   };
   return suggestions[metric] || 'Focus on improving this metric.';

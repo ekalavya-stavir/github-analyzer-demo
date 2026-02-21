@@ -56,18 +56,22 @@ export function analyzeReadability(patches) {
   let styleIssueWeight = 0;
   let styleIssueCount = 0;
   const styleIssuesByType = {};
+  const evidence = [];
 
   for (const file of codePatches) {
     const addedLines = extractAddedLines(file.patch);
     totalLines += addedLines.length;
-    const code = addedLines.join('\n');
 
-    for (const rule of STYLE_ANTI_PATTERNS) {
-      const matches = code.match(rule.pattern);
-      if (matches) {
-        styleIssueCount += matches.length;
-        styleIssueWeight += matches.length * rule.weight;
-        styleIssuesByType[rule.name] = (styleIssuesByType[rule.name] || 0) + matches.length;
+    for (let lineIndex = 0; lineIndex < addedLines.length; lineIndex++) {
+      const line = addedLines[lineIndex];
+      for (const rule of STYLE_ANTI_PATTERNS) {
+        const matches = line.match(rule.pattern);
+        if (matches) {
+          styleIssueCount += matches.length;
+          styleIssueWeight += matches.length * rule.weight;
+          styleIssuesByType[rule.name] = (styleIssuesByType[rule.name] || 0) + matches.length;
+          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: rule.name });
+        }
       }
     }
 
@@ -75,8 +79,10 @@ export function analyzeReadability(patches) {
     let inFunction = false;
     let functionBraceDepth = 0;
     let prevIndentType = null;
+    let functionStartLine = 0;
 
-    for (const line of addedLines) {
+    for (let lineIndex = 0; lineIndex < addedLines.length; lineIndex++) {
+      const line = addedLines[lineIndex];
       const trimmed = line.trim();
       if (!trimmed) continue;
 
@@ -88,26 +94,39 @@ export function analyzeReadability(patches) {
       totalNestingDepth += depth;
       nestingMeasurements++;
       if (depth > maxNestingDepth) maxNestingDepth = depth;
+      if (depth > 4) {
+        evidence.push({ file: file.filename, line: lineIndex + 1, snippet: trimmed.substring(0, 120), issue: 'deep-nesting' });
+      }
 
       for (const np of POOR_NAMING_PATTERNS) {
         const matches = trimmed.match(np.pattern);
-        if (matches) namingIssues += matches.length * np.weight;
+        if (matches) {
+          namingIssues += matches.length * np.weight;
+          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: trimmed.substring(0, 120), issue: np.name });
+        }
       }
 
       const isFunctionStart = /\b(function|=>|def |fn )\b/.test(trimmed);
       if (isFunctionStart) {
-        if (inFunction && currentFunctionLength > 30) longFunctions++;
+        if (inFunction && currentFunctionLength > 30) {
+          longFunctions++;
+          evidence.push({ file: file.filename, line: functionStartLine + 1, snippet: addedLines[functionStartLine].trim().substring(0, 120), issue: 'long-function' });
+        }
         totalFunctions++;
         inFunction = true;
         currentFunctionLength = 0;
         functionBraceDepth = 0;
+        functionStartLine = lineIndex;
       }
       if (inFunction) {
         currentFunctionLength++;
         functionBraceDepth += (trimmed.match(/\{/g) || []).length;
         functionBraceDepth -= (trimmed.match(/\}/g) || []).length;
         if (functionBraceDepth <= 0 && currentFunctionLength > 1) {
-          if (currentFunctionLength > 30) longFunctions++;
+          if (currentFunctionLength > 30) {
+            longFunctions++;
+            evidence.push({ file: file.filename, line: functionStartLine + 1, snippet: addedLines[functionStartLine].trim().substring(0, 120), issue: 'long-function' });
+          }
           inFunction = false;
         }
       }
@@ -125,7 +144,10 @@ export function analyzeReadability(patches) {
       }
     }
 
-    if (inFunction && currentFunctionLength > 30) longFunctions++;
+    if (inFunction && currentFunctionLength > 30) {
+      longFunctions++;
+      evidence.push({ file: file.filename, line: functionStartLine + 1, snippet: addedLines[functionStartLine].trim().substring(0, 120), issue: 'long-function' });
+    }
   }
 
   const commentDensity = totalLines > 0 ? commentLines / totalLines : 0;
@@ -186,6 +208,7 @@ export function analyzeReadability(patches) {
       styleIssueCount,
       styleIssueRate: Math.round(styleIssueRate * 1000) / 1000,
       linesAnalyzed: totalLines,
+      evidence: evidence.slice(0, 15),
     },
   };
 }
