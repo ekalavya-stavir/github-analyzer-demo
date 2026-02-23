@@ -12,12 +12,12 @@ const CODE_FILE_EXTENSIONS = /\.(js|jsx|ts|tsx|py|java|go|rb|rs|c|cpp|cs|php|swi
 
 export function analyzeDuplication(patches) {
   if (!patches || patches.length === 0) {
-    return { score: 5, details: { duplicateBlocks: 0, duplicateLines: 0, totalLines: 0 } };
+    return { score: 5, details: { duplicateBlocks: 0, duplicateLines: 0, totalLines: 0, evidence: [{ file: 'Summary', line: 0, snippet: 'No patches available for analysis', issue: 'no-data' }] } };
   }
 
   const codePatches = patches.filter((p) => CODE_FILE_EXTENSIONS.test(p.filename));
   if (codePatches.length === 0) {
-    return { score: 7, details: { duplicateBlocks: 0, duplicateLines: 0, totalLines: 0, note: 'No code files' } };
+    return { score: 7, details: { duplicateBlocks: 0, duplicateLines: 0, totalLines: 0, note: 'No code files', evidence: [{ file: 'Summary', line: 0, snippet: `${patches.length} files analyzed, none are code files`, issue: 'no-code-files' }] } };
   }
 
   const allAddedBlocks = [];
@@ -104,12 +104,15 @@ export function analyzeDuplication(patches) {
       totalLines,
       duplicationRatio: Math.round(duplicationRatio * 1000) / 1000,
       examples: duplicateExamples,
-      evidence: duplicateExamples.slice(0, 15).map((ex) => ({
-        file: ex.files.join(', '),
-        line: 0,
-        snippet: ex.snippet.substring(0, 120),
-        issue: `duplicate-block (${ex.occurrences}x across ${ex.files.length} file${ex.files.length > 1 ? 's' : ''})`,
-      })),
+      evidence: [
+        { file: 'Summary', line: 0, snippet: `${duplicateBlocks} duplicate blocks, ${duplicateLines} duplicate lines out of ${totalLines} total (${Math.round(duplicationRatio * 1000) / 10}% duplication)`, issue: duplicateBlocks === 0 ? 'clean' : 'overview' },
+        ...duplicateExamples.slice(0, 14).map((ex) => ({
+          file: ex.files.join(', '),
+          line: 0,
+          snippet: ex.snippet.substring(0, 120),
+          issue: `duplicate-block (${ex.occurrences}x across ${ex.files.length} file${ex.files.length > 1 ? 's' : ''})`,
+        })),
+      ],
     },
   };
 }

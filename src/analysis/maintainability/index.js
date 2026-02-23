@@ -62,12 +62,12 @@ const REFACTORING_POSITIVE = [
 
 export function analyzeMaintainability(patches) {
   if (!patches || patches.length === 0) {
-    return { score: 5, details: {} };
+    return { score: 5, details: { evidence: [{ file: 'Summary', line: 0, snippet: 'No patches available for analysis', issue: 'no-data' }] } };
   }
 
   const codePatches = patches.filter((p) => CODE_FILE_EXTENSIONS.test(p.filename));
   if (codePatches.length === 0) {
-    return { score: 7, details: { note: 'No code files' } };
+    return { score: 7, details: { note: 'No code files', evidence: [{ file: 'Summary', line: 0, snippet: `${patches.length} files analyzed, none are code files`, issue: 'no-code-files' }] } };
   }
 
   let totalLines = 0;
@@ -272,7 +272,11 @@ export function analyzeMaintainability(patches) {
       totalFiles,
       totalFunctions,
       totalLines,
-      evidence: evidence.slice(0, 15),
+      evidence: [
+        { file: 'Summary', line: 0, snippet: `MI: ${Math.round(normalizedMI)}, avg file: ${Math.round(avgFileSize)} lines, avg func: ${Math.round(avgFunctionLength)} lines, doc coverage: ${Math.round(docCoverage * 100)}%, tech debt: ${techDebtCount} items`, issue: 'overview' },
+        { file: 'Structure', line: 0, snippet: `${dirCount} directories, ${totalFiles} files, ${totalFunctions} functions, ${longFiles} large files, ${Math.round(abstractionScore * 10) / 10} abstraction score`, issue: isWellOrganized ? 'well-organized' : 'structure-review' },
+        ...evidence,
+      ].slice(0, 15),
     },
   };
 }

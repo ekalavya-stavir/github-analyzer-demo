@@ -35,12 +35,12 @@ const STYLE_ANTI_PATTERNS = [
 
 export function analyzeReadability(patches) {
   if (!patches || patches.length === 0) {
-    return { score: 5, details: {} };
+    return { score: 5, details: { evidence: [{ file: 'Summary', line: 0, snippet: 'No patches available for analysis', issue: 'no-data' }] } };
   }
 
   const codePatches = patches.filter((p) => CODE_FILE_EXTENSIONS.test(p.filename));
   if (codePatches.length === 0) {
-    return { score: 7, details: { note: 'No code files' } };
+    return { score: 7, details: { note: 'No code files', evidence: [{ file: 'Summary', line: 0, snippet: `${patches.length} files analyzed, none are code files`, issue: 'no-code-files' }] } };
   }
 
   let totalLines = 0;
@@ -208,7 +208,10 @@ export function analyzeReadability(patches) {
       styleIssueCount,
       styleIssueRate: Math.round(styleIssueRate * 1000) / 1000,
       linesAnalyzed: totalLines,
-      evidence: evidence.slice(0, 15),
+      evidence: [
+        { file: 'Summary', line: 0, snippet: `${totalLines} lines analyzed, ${styleIssueCount} style issues, ${longFunctions}/${totalFunctions} long functions, max nesting: ${maxNestingDepth}, comment density: ${Math.round(commentDensity * 100)}%`, issue: 'overview' },
+        ...evidence,
+      ].slice(0, 15),
     },
   };
 }

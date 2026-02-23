@@ -27,7 +27,7 @@ export function analyzePRReview(developerData, baseStats) {
   if (totalPRs === 0 || totalDevelopers === 0) {
     return {
       score: 5,
-      details: { note: 'Insufficient data to evaluate', totalPRs, totalDevelopers },
+      details: { note: 'Insufficient data to evaluate', totalPRs, totalDevelopers, evidence: [{ file: 'Summary', line: 0, snippet: `No PRs (${totalPRs}) or developers (${totalDevelopers}) in analysis period`, issue: 'no-data' }] },
     };
   }
 

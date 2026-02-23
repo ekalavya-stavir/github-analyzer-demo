@@ -65,12 +65,12 @@ const CODE_FILE_EXTENSIONS = /\.(js|jsx|ts|tsx|py|java|go|rb|rs|cs|php)$/;
 
 export function analyzeNPlusOne(patches) {
   if (!patches || patches.length === 0) {
-    return { score: 5, details: { violations: [], totalViolations: 0, linesAnalyzed: 0 } };
+    return { score: 5, details: { violations: [], totalViolations: 0, linesAnalyzed: 0, evidence: [{ file: 'Summary', line: 0, snippet: 'No patches available for analysis', issue: 'no-data' }] } };
   }
 
   const codePatches = patches.filter((p) => CODE_FILE_EXTENSIONS.test(p.filename));
   if (codePatches.length === 0) {
-    return { score: 8, details: { violations: [], totalViolations: 0, linesAnalyzed: 0, note: 'No code files' } };
+    return { score: 8, details: { violations: [], totalViolations: 0, linesAnalyzed: 0, note: 'No code files', evidence: [{ file: 'Summary', line: 0, snippet: `${patches.length} files analyzed, none are code files`, issue: 'no-code-files' }] } };
   }
 
   const violations = [];
@@ -111,12 +111,15 @@ export function analyzeNPlusOne(patches) {
     score: Math.round(score * 10) / 10,
     details: {
       violations: violations.slice(0, 20),
-      evidence: violations.slice(0, 15).map((v) => ({
-        file: v.file,
-        line: v.line,
-        snippet: v.snippet,
-        issue: v.type,
-      })),
+      evidence: [
+        { file: 'Summary', line: 0, snippet: `${totalViolations} N+1 pattern${totalViolations !== 1 ? 's' : ''} detected in ${totalLines} lines (${Math.round(violationsPerKLOC * 10) / 10} per KLOC)`, issue: totalViolations === 0 ? 'clean' : 'overview' },
+        ...violations.slice(0, 14).map((v) => ({
+          file: v.file,
+          line: v.line,
+          snippet: v.snippet,
+          issue: v.type,
+        })),
+      ],
       totalViolations,
       linesAnalyzed: totalLines,
       violationsPerKLOC: Math.round(violationsPerKLOC * 10) / 10,

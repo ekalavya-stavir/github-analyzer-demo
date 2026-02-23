@@ -46,12 +46,12 @@ const CODE_FILE_EXTENSIONS = /\.(js|jsx|ts|tsx|py|java|go|rb|rs|c|cpp|cs|php)$/;
 
 export function analyzeComplexity(patches) {
   if (!patches || patches.length === 0) {
-    return { score: 5, details: { avgComplexity: 0, functionsFound: 0, linesAnalyzed: 0 } };
+    return { score: 5, details: { avgComplexity: 0, functionsFound: 0, linesAnalyzed: 0, evidence: [{ file: 'Summary', line: 0, snippet: 'No patches available for analysis', issue: 'no-data' }] } };
   }
 
   const codePatches = patches.filter((p) => CODE_FILE_EXTENSIONS.test(p.filename));
   if (codePatches.length === 0) {
-    return { score: 7, details: { avgComplexity: 0, functionsFound: 0, linesAnalyzed: 0, note: 'No code files' } };
+    return { score: 7, details: { avgComplexity: 0, functionsFound: 0, linesAnalyzed: 0, note: 'No code files', evidence: [{ file: 'Summary', line: 0, snippet: `${patches.length} files analyzed, none are code files`, issue: 'no-code-files' }] } };
   }
 
   let totalDecisionPoints = 0;
@@ -161,7 +161,11 @@ export function analyzeComplexity(patches) {
       antiPatternCount,
       linesAnalyzed: totalLines,
       topComplexFiles: fileComplexities.slice(0, 5),
-      evidence: evidence.slice(0, 15),
+      evidence: [
+        { file: 'Summary', line: 0, snippet: `Avg complexity: ${Math.round(avgComplexity * 10) / 10} per function, ${totalDecisionPoints} decision points across ${totalFunctions} functions in ${codePatches.length} files, ${antiPatternCount} anti-patterns`, issue: 'overview' },
+        ...fileComplexities.slice(0, 3).map((fc) => ({ file: fc.filename, line: 0, snippet: `Complexity: ${fc.complexity} (${fc.decisionPoints} decisions / ${fc.functions} functions)`, issue: fc.complexity > 10 ? 'high-complexity' : 'file-stats' })),
+        ...evidence,
+      ].slice(0, 15),
     },
   };
 }

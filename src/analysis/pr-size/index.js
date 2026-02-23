@@ -18,7 +18,7 @@ const SIZE_THRESHOLDS = {
 
 export function analyzePRSize(pullRequests) {
   if (!pullRequests || pullRequests.length === 0) {
-    return { score: 5, details: { totalPRs: 0, note: 'No PRs found' } };
+    return { score: 5, details: { totalPRs: 0, note: 'No PRs found', evidence: [{ file: 'Summary', line: 0, snippet: 'No pull requests found in the analysis period', issue: 'no-data' }] } };
   }
 
   const prSizes = pullRequests.map((pr) => {
@@ -88,15 +88,18 @@ export function analyzePRSize(pullRequests) {
           title: pr.title?.substring(0, 60),
           changes: pr.totalChanges,
         })),
-      evidence: prSizes
-        .sort((a, b) => b.totalChanges - a.totalChanges)
-        .slice(0, 15)
-        .map((pr) => ({
-          file: `PR #${pr.number}`,
-          line: 0,
-          snippet: `${pr.title?.substring(0, 80)} — +${pr.additions}/-${pr.deletions} (${pr.category})`,
-          issue: pr.category === 'xl' ? 'xl-pr' : pr.category === 'large' ? 'large-pr' : `${pr.category}-pr`,
-        })),
+      evidence: [
+        { file: 'Summary', line: 0, snippet: `${prSizes.length} PRs — avg: ${Math.round(avgChanges)} lines, median: ${Math.round(medianChanges)} lines | XS: ${distribution.xs}, S: ${distribution.small}, M: ${distribution.medium}, L: ${distribution.large}, XL: ${distribution.xl}`, issue: 'overview' },
+        ...prSizes
+          .sort((a, b) => b.totalChanges - a.totalChanges)
+          .slice(0, 14)
+          .map((pr) => ({
+            file: `PR #${pr.number}`,
+            line: 0,
+            snippet: `${pr.title?.substring(0, 80)} — +${pr.additions}/-${pr.deletions} (${pr.category})`,
+            issue: pr.category === 'xl' ? 'xl-pr' : pr.category === 'large' ? 'large-pr' : `${pr.category}-pr`,
+          })),
+      ],
     },
   };
 }

@@ -51,12 +51,12 @@ const COUPLING_PATTERNS = [
 
 export function analyzeSolid(patches) {
   if (!patches || patches.length === 0) {
-    return { score: 5, details: {} };
+    return { score: 5, details: { evidence: [{ file: 'Summary', line: 0, snippet: 'No patches available for analysis', issue: 'no-data' }] } };
   }
 
   const codePatches = patches.filter((p) => CODE_FILE_EXTENSIONS.test(p.filename));
   if (codePatches.length === 0) {
-    return { score: 7, details: { note: 'No code files' } };
+    return { score: 7, details: { note: 'No code files', evidence: [{ file: 'Summary', line: 0, snippet: `${patches.length} files analyzed, none are code files`, issue: 'no-code-files' }] } };
   }
 
   let totalLines = 0;
@@ -172,7 +172,10 @@ export function analyzeSolid(patches) {
       violationRate: Math.round(violationRate * 1000) / 1000,
       topViolations: violationDetails.slice(0, 10),
       linesAnalyzed: totalLines,
-      evidence: evidence.slice(0, 15),
+      evidence: [
+        { file: 'Summary', line: 0, snippet: `${totalLines} lines analyzed — SRP: ${srpViolations}, OCP: ${ocpViolations}, ISP: ${Math.round(ispViolations)}, DIP: ${Math.round(dipViolations)}, coupling: ${Math.round(couplingViolations)}, god-class: ${Math.round(godClassIndicators * 10) / 10}`, issue: 'overview' },
+        ...evidence,
+      ].slice(0, 15),
     },
   };
 }

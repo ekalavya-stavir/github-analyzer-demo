@@ -21,6 +21,7 @@ import { analyzeSolid } from './src/analysis/solid/index.js';
 import { analyzePRSize } from './src/analysis/pr-size/index.js';
 import { analyzePRReview } from './src/analysis/pr-review/index.js';
 import { analyzeMaintainability } from './src/analysis/maintainability/index.js';
+import { analyzeContribution, computeContributionBuckets } from './src/analysis/contribution/index.js';
 import {
   calculateFinalScore,
   generateStrengths,
@@ -87,9 +88,27 @@ async function main() {
   const baseStats = computeBaseStats(repoDataList, contributorLogins.length);
   console.log(`  Base stats: ${baseStats.totalPRs} PRs, ${baseStats.totalLinesChanged} lines changed, ${baseStats.totalDevelopers} developers\n`);
 
+  const devContribData = {};
+  for (const login of contributorLogins) {
+    const patches = contributorMap[login].patches || [];
+    const added = patches.reduce((sum, p) => sum + (p.additions || 0), 0);
+    const changed = patches.reduce((sum, p) => sum + (p.deletions || 0), 0);
+    devContribData[login] = { added, changed, total: added + changed };
+  }
+  const linesPerDev = Object.fromEntries(Object.entries(devContribData).map(([k, v]) => [k, v.total]));
+  const contributionBuckets = computeContributionBuckets(linesPerDev);
+  console.log(`  Contribution buckets: min=${contributionBuckets.min}, max=${contributionBuckets.max}, width=${Math.round(contributionBuckets.bucketWidth)} lines/bucket\n`);
+
+  const activeLogins = contributorLogins.filter((login) => (devContribData[login]?.total || 0) > 0);
+  const reviewOnlyLogins = contributorLogins.filter((login) => (devContribData[login]?.total || 0) === 0);
+
+  if (reviewOnlyLogins.length > 0) {
+    console.log(`  ${activeLogins.length} active contributors, ${reviewOnlyLogins.length} review-only (no code changes)\n`);
+  }
+
   const developerScores = [];
 
-  for (const login of contributorLogins) {
+  for (const login of activeLogins) {
     const contrib = contributorMap[login];
     process.stdout.write(`  Analyzing ${login}...`);
 
@@ -105,6 +124,8 @@ async function main() {
       0
     );
 
+    const devContrib = devContribData[login] || { added: 0, changed: 0, total: 0 };
+
     const metrics = {
       codeMaintainability: analyzeMaintainability(patches),
       prReview: analyzePRReview(
@@ -117,6 +138,7 @@ async function main() {
       readability: analyzeReadability(patches),
       cyclomaticComplexity: analyzeComplexity(patches),
       nplusone: analyzeNPlusOne(patches),
+      contribution: analyzeContribution(devContrib, contributionBuckets),
     };
 
     const finalScore = calculateFinalScore(metrics);
@@ -133,12 +155,44 @@ async function main() {
       stats: {
         commits: commits.length,
         prsAuthored: pullRequests.length,
-        reviewCommentsGiven: reviewComments.length,
+        reviewCommentsGiven: reviewComments,
         linesAdded: patches.reduce((sum, p) => sum + (p.additions || 0), 0),
       },
     });
 
     console.log(` score: ${finalScore}/100`);
+  }
+
+  const reviewOnlyScores = [];
+
+  for (const login of reviewOnlyLogins) {
+    const contrib = contributorMap[login];
+    process.stdout.write(`  Analyzing ${login} (review-only)...`);
+
+    const reviewedPRs = contrib.reviewedPRs || [];
+    const prsReviewed = new Set(reviewedPRs.map((pr) => pr.number)).size;
+    const reviewComments = (contrib.reviewComments || []).length;
+    const reviewedPRsLinesChanged = reviewedPRs.reduce(
+      (sum, pr) => sum + (pr.additions || 0) + (pr.deletions || 0),
+      0
+    );
+
+    const prReview = analyzePRReview(
+      { prsReviewed, reviewComments, reviewedPRsLinesChanged },
+      baseStats
+    );
+
+    reviewOnlyScores.push({
+      login,
+      avatar: contrib.avatar,
+      prReview,
+      stats: {
+        prsReviewed,
+        reviewComments,
+      },
+    });
+
+    console.log(` PR review: ${prReview.score}/10`);
   }
 
   console.log('\n📝 Generating HTML report...\n');
@@ -149,6 +203,7 @@ async function main() {
     sinceDate: sinceDate.toISOString(),
     generatedAt: new Date().toISOString(),
     developers: developerScores,
+    reviewOnlyDevelopers: reviewOnlyScores,
   };
 
   const html = generateHTMLReport(reportData);
@@ -159,7 +214,7 @@ async function main() {
 
   console.log(`✅ Report generated successfully!`);
   console.log(`   File: ${outputPath}`);
-  console.log(`   Contributors: ${developerScores.length}`);
+  console.log(`   Contributors: ${developerScores.length} active, ${reviewOnlyScores.length} review-only`);
   console.log(`   Time: ${elapsed}s\n`);
 }
 

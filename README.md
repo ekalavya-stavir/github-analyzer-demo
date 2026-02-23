@@ -85,14 +85,15 @@ Each metric is scored from **0 to 10**, and the final score is scaled to **0-100
 
 | # | Metric                    | Weight | Description                                                        |
 |---|---------------------------|--------|--------------------------------------------------------------------|
-| 1 | Code Readability          | 15%    | Naming, nesting, style anti-patterns, comment density              |
-| 2 | Cyclomatic Complexity     | 8%     | Decision points per function, dead code, promise chains            |
-| 3 | Code Maintainability      | 16%    | File size, function length, doc coverage, tech debt, abstractions  |
-| 4 | SOLID Principles          | 12%    | SRP, OCP, ISP, DIP violation detection                             |
-| 5 | N+1 Query Detection       | 12%    | ORM/SQL/API queries inside loops                                   |
-| 6 | PR Size Discipline        | 8%     | Average PR size, penalizes large PRs                               |
-| 7 | PR Review Contribution    | 14%    | Review quality, substantive feedback ratio                          |
-| 8 | Duplicate Code            | 15%    | Token-based duplicate block detection                              |
+| 1 | Code Readability          | 14%    | Naming, nesting, style anti-patterns, comment density              |
+| 2 | Cyclomatic Complexity     | 7%     | Decision points per function, dead code, promise chains            |
+| 3 | Code Maintainability      | 15%    | File size, function length, doc coverage, tech debt, abstractions  |
+| 4 | SOLID Principles          | 11%    | SRP, OCP, ISP, DIP violation detection                             |
+| 5 | N+1 Query Detection       | 11%    | ORM/SQL/API queries inside loops                                   |
+| 6 | PR Size Discipline        | 7%     | Average PR size, penalizes large PRs                               |
+| 7 | PR Review Contribution    | 13%    | Review ratio and comment density (50/50)                           |
+| 8 | Duplicate Code            | 14%    | Token-based duplicate block detection                              |
+| 9 | Contributor Score         | 8%     | Lines changed ranked in 10 equal-width buckets across team         |
 
 ### Grading Scale
 
@@ -114,7 +115,7 @@ The generated report includes:
 - **Per-Developer Scorecards**:
   - Profile with GitHub link
   - Overall score with grade badge
-  - Radar chart covering all 8 metrics
+  - Radar chart covering all 9 metrics
   - Metric breakdown table with visual bars
   - Strengths section
   - Improvement suggestions

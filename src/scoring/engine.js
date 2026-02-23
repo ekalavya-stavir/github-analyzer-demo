@@ -7,14 +7,15 @@
  */
 
 export const DEFAULT_WEIGHTS = {
-  readability: 0.15,
-  cyclomaticComplexity: 0.08,
-  codeMaintainability: 0.16,
-  solidPrinciples: 0.12,
-  nplusone: 0.12,
-  prSize: 0.08,
-  prReview: 0.14,
-  duplication: 0.15,
+  readability: 0.14,
+  cyclomaticComplexity: 0.07,
+  codeMaintainability: 0.15,
+  solidPrinciples: 0.11,
+  nplusone: 0.11,
+  prSize: 0.07,
+  prReview: 0.13,
+  duplication: 0.14,
+  contribution: 0.08,
 };
 
 export const METRIC_LABELS = {
@@ -26,6 +27,7 @@ export const METRIC_LABELS = {
   prSize: 'PR Size Discipline',
   prReview: 'PR Review Contribution',
   duplication: 'Duplicate Code',
+  contribution: 'Contributor Score',
 };
 
 export function calculateFinalScore(metricScores, weights = DEFAULT_WEIGHTS) {
@@ -94,6 +96,7 @@ function getStrengthDescription(metric, data) {
     prSize: `Well-sized PRs with median ${data.details?.medianChangesPerPR || 0} changes.`,
     prReview: `Strong reviewer — reviewed ${data.details?.prsReviewed || 0} PRs with ${data.details?.reviewComments || 0} comments.`,
     duplication: `Minimal code duplication (${data.details?.duplicationRatio || 0} ratio).`,
+    contribution: `High contributor — ${data.details?.linesChanged || 0} lines changed (bucket ${data.details?.bucket || '?'}/10, ${data.details?.percentage || 0}% of total).`,
   };
   return descriptions[metric] || 'Good performance in this area.';
 }
@@ -108,6 +111,7 @@ function getImprovementSuggestion(metric, data) {
     prSize: `Break down large PRs (median: ${data.details?.medianChangesPerPR || 0} changes) into smaller, focused ones.`,
     prReview: `Review more PRs (${data.details?.prsReviewed || 0}/${data.details?.totalPRs || '?'}) and add more comments (${data.details?.reviewComments || 0} given, expect 1 per 50 lines).`,
     duplication: `Reduce code duplication (${data.details?.duplicateBlocks || 0} blocks found). Extract shared logic.`,
+    contribution: `Increase contributions — ${data.details?.linesChanged || 0} lines changed (bucket ${data.details?.bucket || '?'}/10). Team range: ${data.details?.min || 0}–${data.details?.max || 0} lines.`,
   };
   return suggestions[metric] || 'Focus on improving this metric.';
 }

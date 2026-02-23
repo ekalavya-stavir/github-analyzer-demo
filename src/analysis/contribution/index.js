@@ -1,0 +1,118 @@
+/**
+ * Contributor Score Analyzer (Bucket-based)
+ *
+ * Scoring method:
+ *   1. Calculate total lines of code changed (additions + deletions) per developer
+ *   2. Find min and max contributions across all developers
+ *   3. Create 10 equal-width buckets from min to max
+ *   4. Place each developer into a bucket: bucket 1 = least code, bucket 10 = most code
+ *   5. The bucket number IS the score (1-10)
+ *
+ * Evidence shows: lines added + lines changed (deletions) by developer vs team totals
+ *
+ * Score: 1-10 (10 = highest contributor)
+ */
+
+/**
+ * Pre-computes bucket boundaries from all developers' line counts.
+ * Call once before scoring individual developers.
+ *
+ * @param {Record<string, number>} linesPerDev - map of login -> total lines (added + changed)
+ * @returns {{ min, max, bucketWidth, totalLines, devCount }}
+ */
+export function computeContributionBuckets(linesPerDev) {
+  const entries = Object.entries(linesPerDev);
+  const devCount = entries.length;
+
+  if (devCount === 0) {
+    return { min: 0, max: 0, bucketWidth: 0, totalLines: 0, devCount: 0 };
+  }
+
+  const values = entries.map(([, v]) => v);
+  const totalLines = values.reduce((sum, v) => sum + v, 0);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const bucketWidth = max > min ? (max - min) / 10 : 0;
+
+  return { min, max, bucketWidth, totalLines, devCount };
+}
+
+/**
+ * Scores a single developer based on pre-computed bucket boundaries.
+ *
+ * @param {{ added: number, changed: number, total: number }} developerData
+ * @param {{ min, max, bucketWidth, totalLines, devCount }} bucketStats
+ */
+export function analyzeContribution(developerData, bucketStats) {
+  const { added, changed, total } = developerData;
+  const { min, max, bucketWidth, totalLines, devCount } = bucketStats;
+
+  if (devCount === 0 || totalLines === 0) {
+    return {
+      score: 5,
+      details: {
+        added: 0,
+        changed: 0,
+        total: 0,
+        bucket: 0,
+        evidence: [{
+          file: 'Summary', line: 0,
+          snippet: 'No contribution data available',
+          issue: 'no-data',
+        }],
+      },
+    };
+  }
+
+  let bucket;
+  if (bucketWidth === 0) {
+    bucket = 5;
+  } else {
+    bucket = Math.floor((total - min) / bucketWidth) + 1;
+    bucket = Math.max(1, Math.min(10, bucket));
+  }
+
+  const score = bucket;
+  const percentage = Math.round((total / totalLines) * 1000) / 10;
+
+  const bucketLo = Math.round(min + bucketWidth * (bucket - 1));
+  const bucketHi = bucket < 10 ? Math.round(min + bucketWidth * bucket - 1) : Math.round(max);
+
+  return {
+    score,
+    details: {
+      added,
+      changed,
+      total,
+      totalLines,
+      devCount,
+      min,
+      max,
+      bucket,
+      bucketWidth: Math.round(bucketWidth),
+      percentage,
+      evidence: [
+        {
+          file: 'Lines Added', line: 0,
+          snippet: 'This developer: +' + added + ' lines added | Team total: +' + totalLines + ' lines',
+          issue: 'overview',
+        },
+        {
+          file: 'Lines Changed', line: 0,
+          snippet: 'This developer: ~' + changed + ' lines changed (deleted/modified) | Total (added + changed): ' + total,
+          issue: 'overview',
+        },
+        {
+          file: 'Contribution Share', line: 0,
+          snippet: total + ' / ' + totalLines + ' total lines (' + percentage + '%) across ' + devCount + ' developers',
+          issue: percentage >= (100 / devCount) ? 'above-average' : 'below-average',
+        },
+        {
+          file: 'Bucket Placement', line: 0,
+          snippet: 'Bucket ' + bucket + '/10 (range: ' + bucketLo + '-' + bucketHi + ' lines) | Min: ' + min + ', Max: ' + max + ', Width: ' + Math.round(bucketWidth) + '/bucket',
+          issue: bucket >= 7 ? 'high-contributor' : bucket >= 4 ? 'mid-contributor' : 'low-contributor',
+        },
+      ],
+    },
+  };
+}
