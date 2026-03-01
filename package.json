@@ -13,6 +13,7 @@
   "scripts": {
     "start": "node index.js",
     "analyse": "node index.js",
+    "test": "node --test src/**/*.test.js",
     "lint": "eslint src/"
   },
   "keywords": [

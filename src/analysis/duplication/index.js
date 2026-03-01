@@ -7,7 +7,8 @@
  * Score: 0-10 (10 = no duplication, inverse scoring)
  */
 
-const MIN_DUPLICATE_LINES = 4;
+const MIN_DUPLICATE_LINES = 6;
+const MIN_DUPLICATE_CHARS = 61;
 const CODE_FILE_EXTENSIONS = /\.(js|jsx|ts|tsx|py|java|go|rb|rs|c|cpp|cs|php|swift|kt)$/;
 
 export function analyzeDuplication(patches) {
@@ -27,15 +28,21 @@ export function analyzeDuplication(patches) {
     const addedLines = extractAddedLines(file.patch);
     totalLines += addedLines.length;
 
-    const normalized = addedLines.map(normalizeLine).filter((l) => l.length > 0);
+    const withNorm = addedLines
+      .map((al) => ({ ...al, norm: normalizeLine(al.text) }))
+      .filter((al) => al.norm.length > 0);
 
-    for (let i = 0; i <= normalized.length - MIN_DUPLICATE_LINES; i++) {
-      const block = normalized.slice(i, i + MIN_DUPLICATE_LINES).join('\n');
+    for (let i = 0; i <= withNorm.length - MIN_DUPLICATE_LINES; i++) {
+      const slice = withNorm.slice(i, i + MIN_DUPLICATE_LINES);
+      const block = slice.map((s) => s.norm).join('\n');
+      if (block.length < MIN_DUPLICATE_CHARS) continue;
       allAddedBlocks.push({
         hash: simpleHash(block),
         block,
+        originalLines: slice.map((s) => s.text),
         file: file.filename,
-        startLine: i,
+        startLine: slice[0].line,
+        endLine: slice[slice.length - 1].line,
       });
     }
   }
@@ -62,9 +69,13 @@ export function analyzeDuplication(patches) {
 
         if (duplicateExamples.length < 5) {
           duplicateExamples.push({
-            files: [...uniqueFiles],
+            locations: items.map((i) => ({
+              file: i.file,
+              startLine: i.startLine,
+              endLine: i.endLine,
+            })),
             occurrences: items.length,
-            snippet: items[0].block.split('\n').slice(0, 3).join(' | '),
+            originalLines: items[0].originalLines,
           });
         }
       }
@@ -106,12 +117,16 @@ export function analyzeDuplication(patches) {
       examples: duplicateExamples,
       evidence: [
         { file: 'Summary', line: 0, snippet: `${duplicateBlocks} duplicate blocks, ${duplicateLines} duplicate lines out of ${totalLines} total (${Math.round(duplicationRatio * 1000) / 10}% duplication)`, issue: duplicateBlocks === 0 ? 'clean' : 'overview' },
-        ...duplicateExamples.slice(0, 14).map((ex) => ({
-          file: ex.files.join(', '),
-          line: 0,
-          snippet: ex.snippet.substring(0, 120),
-          issue: `duplicate-block (${ex.occurrences}x across ${ex.files.length} file${ex.files.length > 1 ? 's' : ''})`,
-        })),
+        ...duplicateExamples.slice(0, 5).flatMap((ex) => {
+          const uniqueFiles = new Set(ex.locations.map((l) => l.file));
+          const header = `duplicate-block (${ex.occurrences}x across ${uniqueFiles.size} file${uniqueFiles.size > 1 ? 's' : ''})`;
+          return ex.locations.map((loc) => ({
+            file: loc.file,
+            line: loc.startLine,
+            snippet: ex.originalLines.map((l, i) => `${loc.startLine + i} | ${l}`).join('\n'),
+            issue: header,
+          }));
+        }),
       ],
     },
   };
@@ -119,13 +134,28 @@ export function analyzeDuplication(patches) {
 
 function extractAddedLines(patch) {
   if (!patch) return [];
-  return patch
-    .split('\n')
-    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
-    .map((line) => line.substring(1));
+  const results = [];
+  let currentLine = 0;
+  for (const raw of patch.split('\n')) {
+    const hunkMatch = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
+    if (hunkMatch) {
+      currentLine = parseInt(hunkMatch[1], 10);
+      continue;
+    }
+    if (raw.startsWith('+') && !raw.startsWith('+++')) {
+      results.push({ line: currentLine, text: raw.substring(1) });
+      currentLine++;
+    } else if (!raw.startsWith('-')) {
+      currentLine++;
+    }
+  }
+  return results;
 }
 
+const SKIP_LINE_PATTERN = /^\s*(import\s|export\s.*from|require\s*\(|using\s|use\s|from\s+\S+\s+import|#include|package\s|\/\/|\/\*|\*\/|\*\s|return\s|return;|return$)/;
+
 function normalizeLine(line) {
+  if (SKIP_LINE_PATTERN.test(line)) return '';
   return line
     .replace(/\/\/.*$/, '')
     .replace(/\/\*.*?\*\//g, '')

@@ -81,6 +81,9 @@ async function fetchPRDetails(owner, repo, pullRequests) {
             fetchPRReviewComments(owner, repo, pr.number),
           ]);
 
+          const totalAdditions = files.reduce((sum, f) => sum + (f.additions || 0), 0);
+          const totalDeletions = files.reduce((sum, f) => sum + (f.deletions || 0), 0);
+
           return {
             number: pr.number,
             title: pr.title,
@@ -91,9 +94,9 @@ async function fetchPRDetails(owner, repo, pullRequests) {
             createdAt: pr.created_at,
             updatedAt: pr.updated_at,
             mergedAt: pr.merged_at,
-            additions: pr.additions || 0,
-            deletions: pr.deletions || 0,
-            changedFiles: pr.changed_files || 0,
+            additions: totalAdditions,
+            deletions: totalDeletions,
+            changedFiles: files.length,
             files,
             reviews,
             reviewComments,
@@ -185,6 +188,7 @@ export async function fetchCommitDetail(owner, repo, sha) {
         status: f.status,
         additions: f.additions,
         deletions: f.deletions,
+        changes: f.changes,
         patch: f.patch || '',
       })),
       stats: data.stats || { additions: 0, deletions: 0, total: 0 },

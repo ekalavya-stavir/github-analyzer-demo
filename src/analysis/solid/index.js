@@ -56,7 +56,7 @@ export function analyzeSolid(patches) {
 
   const codePatches = patches.filter((p) => CODE_FILE_EXTENSIONS.test(p.filename));
   if (codePatches.length === 0) {
-    return { score: 7, details: { note: 'No code files', evidence: [{ file: 'Summary', line: 0, snippet: `${patches.length} files analyzed, none are code files`, issue: 'no-code-files' }] } };
+    return { score: 5, details: { note: 'No code files', evidence: [{ file: 'Summary', line: 0, snippet: `${patches.length} files analyzed, none are code files`, issue: 'no-code-files' }] } };
   }
 
   let totalLines = 0;
@@ -145,20 +145,24 @@ export function analyzeSolid(patches) {
     godClassIndicators * 1.5;
 
   const violationRate = totalLines > 0 ? totalViolationWeight / totalLines : 0;
+  const hasViolations = totalViolationWeight > 0;
 
-  let score = 10;
+  let score;
 
-  if (violationRate > 0.1) score -= 4;
-  else if (violationRate > 0.05) score -= 3;
-  else if (violationRate > 0.03) score -= 2;
-  else if (violationRate > 0.01) score -= 1;
-
-  if (srpViolations > 3) score -= 2;
-  else if (srpViolations > 1) score -= 1;
-
-  if (godClassIndicators > 3) score -= 1;
-
-  score = Math.max(1, Math.min(10, score));
+  if (!hasViolations) {
+    // No violations found — score 6-10 based on amount of code analyzed
+    if (totalLines >= 200) score = 10;
+    else if (totalLines >= 100) score = 9;
+    else if (totalLines >= 50) score = 8;
+    else if (totalLines >= 20) score = 7;
+    else score = 6;
+  } else {
+    // Violations found — score 1-4 based on severity
+    if (violationRate > 0.1 || srpViolations > 3) score = 1;
+    else if (violationRate > 0.05 || srpViolations > 2) score = 2;
+    else if (violationRate > 0.03 || srpViolations > 1) score = 3;
+    else score = 4;
+  }
 
   return {
     score: Math.round(score * 10) / 10,

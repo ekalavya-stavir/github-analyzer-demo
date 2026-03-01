@@ -11,6 +11,7 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { parseCliArgs } from './src/cli/parser.js';
+import { loadConfig } from './src/cli/config.js';
 import { initClient } from './src/github/client.js';
 import { fetchRepoData, fetchCommitDetail } from './src/github/fetcher.js';
 import { analyzeComplexity } from './src/analysis/complexity/index.js';
@@ -26,6 +27,7 @@ import {
   calculateFinalScore,
   generateStrengths,
   generateImprovements,
+  applyBayesianSmoothing,
 } from './src/scoring/engine.js';
 import { generateHTMLReport } from './src/report/generator.js';
 
@@ -37,7 +39,7 @@ async function main() {
   console.log('\n╔══════════════════════════════════════════╗');
   console.log('║     GitHub Analyser — Scorecard Tool      ║');
   console.log('╚══════════════════════════════════════════╝\n');
-  const { repos, days, output, token } = args;
+  const { repos, days, output, exclude, token } = args;
 
   const sinceDate = new Date();
   sinceDate.setDate(sinceDate.getDate() - days);
@@ -45,7 +47,7 @@ async function main() {
   console.log(`Configuration:`);
   console.log(`  Repos: ${repos.join(', ')}`);
   console.log(`  Days:  ${days} (since ${sinceDate.toISOString().split('T')[0]})`);
-  console.log(`  Output: ${output}\n`);
+  console.log(`  Output: ${output || '(auto-generated)'}\n`);
 
   initClient(token);
 
@@ -71,8 +73,20 @@ async function main() {
   }
 
   console.log('\n👥 Identifying contributors...\n');
+  const config = loadConfig();
+  const excludeSet = new Set([
+    ...config.exclude_users.map((u) => u.toLowerCase()),
+    ...exclude.map((u) => u.toLowerCase()),
+  ]);
+
   const contributorMap = buildContributorMap(repoDataList);
-  const contributorLogins = Object.keys(contributorMap);
+  const allLogins = Object.keys(contributorMap);
+  const excluded = allLogins.filter((l) => excludeSet.has(l.toLowerCase()));
+  const contributorLogins = allLogins.filter((l) => !excludeSet.has(l.toLowerCase()));
+
+  if (excluded.length > 0) {
+    console.log(`  Excluded: ${excluded.join(', ')}`);
+  }
   console.log(`  Found ${contributorLogins.length} unique contributors\n`);
 
   if (contributorLogins.length === 0) {
@@ -91,8 +105,24 @@ async function main() {
   const devContribData = {};
   for (const login of contributorLogins) {
     const patches = contributorMap[login].patches || [];
-    const added = patches.reduce((sum, p) => sum + (p.additions || 0), 0);
-    const changed = patches.reduce((sum, p) => sum + (p.deletions || 0), 0);
+    let added = 0;
+    let changed = 0;
+    for (const p of patches) {
+      const apiAdded = p.additions ?? 0;
+      const apiDeleted = p.deletions ?? 0;
+      const apiChanges = p.changes ?? 0;
+      const { added: parsedAdded, deleted: parsedDeleted } = countLinesFromPatch(p.patch);
+      if (apiAdded > 0 || apiDeleted > 0) {
+        added += apiAdded;
+        changed += apiDeleted;
+      } else if (apiChanges > 0) {
+        added += Math.ceil(apiChanges / 2);
+        changed += Math.floor(apiChanges / 2);
+      } else if (parsedAdded > 0 || parsedDeleted > 0) {
+        added += parsedAdded;
+        changed += parsedDeleted;
+      }
+    }
     devContribData[login] = { added, changed, total: added + changed };
   }
   const linesPerDev = Object.fromEntries(Object.entries(devContribData).map(([k, v]) => [k, v.total]));
@@ -149,18 +179,26 @@ async function main() {
       login,
       avatar: contrib.avatar,
       finalScore,
+      contributionSize: devContrib.total,
       metrics,
       strengths,
       improvements,
-      stats: {
-        commits: commits.length,
-        prsAuthored: pullRequests.length,
-        reviewCommentsGiven: reviewComments,
-        linesAdded: patches.reduce((sum, p) => sum + (p.additions || 0), 0),
-      },
+        stats: {
+          commits: commits.length,
+          prsAuthored: pullRequests.length,
+          reviewCommentsGiven: reviewComments,
+          linesAdded: devContrib.added,
+        },
     });
 
-    console.log(` score: ${finalScore}/100`);
+    console.log(` raw score: ${finalScore}/100`);
+  }
+
+  const smoothedScores = applyBayesianSmoothing(developerScores);
+  for (const dev of smoothedScores) {
+    if (dev.rawScore !== dev.finalScore) {
+      console.log(`  ${dev.login}: ${dev.rawScore} → ${dev.finalScore} (Bayesian adjusted)`);
+    }
   }
 
   const reviewOnlyScores = [];
@@ -202,20 +240,32 @@ async function main() {
     days,
     sinceDate: sinceDate.toISOString(),
     generatedAt: new Date().toISOString(),
-    developers: developerScores,
+    developers: smoothedScores,
     reviewOnlyDevelopers: reviewOnlyScores,
   };
 
   const html = generateHTMLReport(reportData);
-  const outputPath = resolve(process.cwd(), output);
+  const resolvedOutput = output || generateOutputFilename(repos, days);
+  const outputPath = resolve(process.cwd(), resolvedOutput);
   await writeFile(outputPath, html, 'utf-8');
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
   console.log(`✅ Report generated successfully!`);
   console.log(`   File: ${outputPath}`);
-  console.log(`   Contributors: ${developerScores.length} active, ${reviewOnlyScores.length} review-only`);
+  console.log(`   Contributors: ${smoothedScores.length} active, ${reviewOnlyScores.length} review-only`);
   console.log(`   Time: ${elapsed}s\n`);
+}
+
+function countLinesFromPatch(patch) {
+  if (!patch || typeof patch !== 'string') return { added: 0, deleted: 0 };
+  let added = 0;
+  let deleted = 0;
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) added++;
+    else if (line.startsWith('-') && !line.startsWith('---')) deleted++;
+  }
+  return { added, deleted };
 }
 
 function computeBaseStats(repoDataList, totalDevelopers) {
@@ -353,6 +403,13 @@ async function enrichContributorPatches(contributorMap, repoDataList) {
     const batch = commitFetchPromises.slice(i, i + batchSize);
     await Promise.allSettled(batch);
   }
+}
+
+function generateOutputFilename(repos, days) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const ts = `${now.getFullYear()}:${pad(now.getDate())}:${pad(now.getMonth() + 1)}:${pad(now.getHours())}:${pad(now.getSeconds())}`;
+  return `developer-report-${days}days-${ts}.html`;
 }
 
 main().catch((err) => {

@@ -8,6 +8,8 @@
  * Score: 0-10 (10 = simplest code)
  */
 
+import { extractAddedLines, extractVisibleLines, countFunctions } from '../diff-utils.js';
+
 const DECISION_PATTERNS = [
   /\bif\s*\(/g,
   /\belse\s+if\s*\(/g,
@@ -26,14 +28,6 @@ const DECISION_PATTERNS = [
   /\?\?/g,
 ];
 
-const FUNCTION_PATTERNS = [
-  /\bfunction\s+\w+\s*\(/g,
-  /\bfunction\s*\(/g,
-  /=>\s*[{(]/g,
-  /\b(async\s+)?function\b/g,
-  /\w+\s*:\s*function/g,
-  /\w+\s*\([^)]*\)\s*\{/g,
-];
 
 const COMPLEXITY_ANTI_PATTERNS = [
   { pattern: /\.then\s*\([^)]*\.then/g, weight: 1, name: 'nested-promise-chain' },
@@ -65,7 +59,8 @@ export function analyzeComplexity(patches) {
 
   for (const file of codePatches) {
     const addedLines = extractAddedLines(file.patch);
-    const code = addedLines.join('\n');
+    const visibleLines = extractVisibleLines(file.patch);
+    const visibleCode = visibleLines.join('\n');
     totalLines += addedLines.length;
 
     let decisionPoints = 0;
@@ -82,11 +77,7 @@ export function analyzeComplexity(patches) {
       }
     }
 
-    let functions = 0;
-    for (const pattern of FUNCTION_PATTERNS) {
-      const matches = code.match(pattern);
-      if (matches) functions += matches.length;
-    }
+    let functions = countFunctions(visibleCode);
 
     for (let lineIndex = 0; lineIndex < addedLines.length; lineIndex++) {
       const line = addedLines[lineIndex];
@@ -117,35 +108,27 @@ export function analyzeComplexity(patches) {
   fileComplexities.sort((a, b) => b.complexity - a.complexity);
 
   const avgComplexity = totalFunctions > 0 ? totalDecisionPoints / totalFunctions : 0;
+  const maxComplexity = fileComplexities.length > 0 ? fileComplexities[0].complexity : 0;
   const antiPatternRate = totalLines > 0 ? antiPatternWeight / totalLines : 0;
 
   let score;
-  if (avgComplexity <= 2) {
-    score = 10;
-  } else if (avgComplexity <= 4) {
-    score = 9;
-  } else if (avgComplexity <= 6) {
-    score = 8;
-  } else if (avgComplexity <= 8) {
-    score = 7;
-  } else if (avgComplexity <= 10) {
-    score = 6;
-  } else if (avgComplexity <= 14) {
-    score = 5;
-  } else if (avgComplexity <= 18) {
-    score = 4;
-  } else if (avgComplexity <= 22) {
-    score = 3;
-  } else if (avgComplexity <= 30) {
-    score = 2;
-  } else {
-    score = 1;
-  }
+  if (maxComplexity < 10) score = 10;
+  else if (maxComplexity < 15) score = 9;
+  else if (maxComplexity < 20) score = 8;
+  else if (maxComplexity < 25) score = 7;
+  else if (maxComplexity < 30) score = 6;
+  else if (maxComplexity < 35) score = 5;
+  else if (maxComplexity < 40) score = 5;
+  else if (maxComplexity < 45) score = 4;
+  else if (maxComplexity < 50) score = 3;
+  else if (maxComplexity < 55) score = 2;
+  else if (maxComplexity < 60) score = 1;
+  else score = 0;
 
   if (antiPatternRate > 0.02) score -= 1;
   else if (antiPatternRate > 0.005) score -= 0.5;
 
-  score = Math.max(1, Math.min(10, score));
+  score = Math.max(0, Math.min(10, score));
 
   const antiPatterns = Object.entries(antiPatternsByType)
     .map(([name, count]) => ({ name, count }))
@@ -155,6 +138,7 @@ export function analyzeComplexity(patches) {
     score: Math.round(score * 10) / 10,
     details: {
       avgComplexity: Math.round(avgComplexity * 10) / 10,
+      maxComplexity: Math.round(maxComplexity * 10) / 10,
       totalDecisionPoints,
       functionsFound: totalFunctions,
       antiPatterns,
@@ -162,7 +146,7 @@ export function analyzeComplexity(patches) {
       linesAnalyzed: totalLines,
       topComplexFiles: fileComplexities.slice(0, 5),
       evidence: [
-        { file: 'Summary', line: 0, snippet: `Avg complexity: ${Math.round(avgComplexity * 10) / 10} per function, ${totalDecisionPoints} decision points across ${totalFunctions} functions in ${codePatches.length} files, ${antiPatternCount} anti-patterns`, issue: 'overview' },
+        { file: 'Summary', line: 0, snippet: `Max complexity: ${Math.round(maxComplexity * 10) / 10}, avg: ${Math.round(avgComplexity * 10) / 10} per function, ${totalDecisionPoints} decision points across ${totalFunctions} functions in ${codePatches.length} files`, issue: 'overview' },
         ...fileComplexities.slice(0, 3).map((fc) => ({ file: fc.filename, line: 0, snippet: `Complexity: ${fc.complexity} (${fc.decisionPoints} decisions / ${fc.functions} functions)`, issue: fc.complexity > 10 ? 'high-complexity' : 'file-stats' })),
         ...evidence,
       ].slice(0, 15),
@@ -170,10 +154,3 @@ export function analyzeComplexity(patches) {
   };
 }
 
-function extractAddedLines(patch) {
-  if (!patch) return [];
-  return patch
-    .split('\n')
-    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
-    .map((line) => line.substring(1));
-}

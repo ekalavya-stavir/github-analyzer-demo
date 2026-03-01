@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 
 const DEFAULTS = {
   days: 30,
-  output: 'report.html',
+  output: '',
 };
 
 const HELP_TEXT = `
@@ -14,7 +14,8 @@ Usage:
 Options:
   --repos    Comma-separated repos (owner/repo or full GitHub URLs)
   --days     Number of past days to analyze (default: ${DEFAULTS.days})
-  --output   Output HTML filename (default: ${DEFAULTS.output})
+  --output   Output HTML filename (default: developer-report-<days>days-<datetime>.html)
+  --exclude  Comma-separated usernames to exclude (added to .analyserrc list)
   --token    GitHub Personal Access Token (default: GITHUB_TOKEN env var)
   --help     Show this help message
 
@@ -57,7 +58,8 @@ export function parseCliArgs(argv = process.argv.slice(2)) {
     options: {
       repos: { type: 'string' },
       days: { type: 'string', default: String(DEFAULTS.days) },
-      output: { type: 'string', default: DEFAULTS.output },
+      output: { type: 'string', default: '' },
+      exclude: { type: 'string', default: '' },
       token: { type: 'string' },
     },
     strict: true,
@@ -94,10 +96,15 @@ export function parseCliArgs(argv = process.argv.slice(2)) {
     process.exit(1);
   }
 
+  const exclude = values.exclude
+    ? values.exclude.split(',').map((u) => u.trim()).filter(Boolean)
+    : [];
+
   return {
     repos,
     days,
     output: values.output,
+    exclude,
     token,
   };
 }

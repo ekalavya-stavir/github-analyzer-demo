@@ -7,15 +7,15 @@
  */
 
 export const DEFAULT_WEIGHTS = {
-  readability: 0.14,
+  readability: 0.13,
   cyclomaticComplexity: 0.07,
-  codeMaintainability: 0.15,
+  codeMaintainability: 0.13,
   solidPrinciples: 0.11,
   nplusone: 0.11,
   prSize: 0.07,
   prReview: 0.13,
-  duplication: 0.14,
-  contribution: 0.08,
+  duplication: 0.13,
+  contribution: 0.12,
 };
 
 export const METRIC_LABELS = {
@@ -89,14 +89,14 @@ export function generateImprovements(metricScores) {
 function getStrengthDescription(metric, data) {
   const descriptions = {
     readability: `Readable code with ${data.details?.commentDensity || 0} comment density.`,
-    cyclomaticComplexity: `Low complexity with average ${data.details?.avgComplexity || 0} per function.`,
+    cyclomaticComplexity: `Low complexity with max ${data.details?.maxComplexity || 0} (avg ${data.details?.avgComplexity || 0}) per function.`,
     codeMaintainability: `Well-structured code with MI of ${data.details?.maintainabilityIndex || 'N/A'} and good structural organization.`,
     solidPrinciples: `Good adherence to SOLID principles.`,
     nplusone: `No N+1 query patterns detected.`,
     prSize: `Well-sized PRs with median ${data.details?.medianChangesPerPR || 0} changes.`,
     prReview: `Strong reviewer — reviewed ${data.details?.prsReviewed || 0} PRs with ${data.details?.reviewComments || 0} comments.`,
     duplication: `Minimal code duplication (${data.details?.duplicationRatio || 0} ratio).`,
-    contribution: `High contributor — ${data.details?.linesChanged || 0} lines changed (bucket ${data.details?.bucket || '?'}/10, ${data.details?.percentage || 0}% of total).`,
+    contribution: `High contributor — ${data.details?.total || 0} lines changed (bucket ${data.details?.bucket || '?'}/10, ${data.details?.percentage || 0}% of total).`,
   };
   return descriptions[metric] || 'Good performance in this area.';
 }
@@ -104,16 +104,45 @@ function getStrengthDescription(metric, data) {
 function getImprovementSuggestion(metric, data) {
   const suggestions = {
     readability: `Improve naming, reduce nesting depth (max: ${data.details?.maxNestingDepth || 0}), add comments.`,
-    cyclomaticComplexity: `Reduce function complexity (avg: ${data.details?.avgComplexity || 0}). Break complex logic into smaller functions.`,
+    cyclomaticComplexity: `Reduce function complexity (max: ${data.details?.maxComplexity || 0}, avg: ${data.details?.avgComplexity || 0}). Break complex logic into smaller functions.`,
     codeMaintainability: `Reduce file sizes, add documentation, and improve code organization with clear abstractions.`,
     solidPrinciples: `Address ${data.details?.srpViolations || 0} SRP violations. Reduce class/module responsibilities.`,
     nplusone: `Fix ${data.details?.totalViolations || 0} potential N+1 query patterns. Use eager loading or batching.`,
     prSize: `Break down large PRs (median: ${data.details?.medianChangesPerPR || 0} changes) into smaller, focused ones.`,
     prReview: `Review more PRs (${data.details?.prsReviewed || 0}/${data.details?.totalPRs || '?'}) and add more comments (${data.details?.reviewComments || 0} given, expect 1 per 50 lines).`,
     duplication: `Reduce code duplication (${data.details?.duplicateBlocks || 0} blocks found). Extract shared logic.`,
-    contribution: `Increase contributions — ${data.details?.linesChanged || 0} lines changed (bucket ${data.details?.bucket || '?'}/10). Team range: ${data.details?.min || 0}–${data.details?.max || 0} lines.`,
+    contribution: `Increase contributions — ${data.details?.total || 0} lines changed (bucket ${data.details?.bucket || '?'}/10). Team range: ${data.details?.min || 0}–${data.details?.max || 0} lines.`,
   };
   return suggestions[metric] || 'Focus on improving this metric.';
+}
+
+const MIN_BASELINE_WEIGHT = 50;
+
+export function applyBayesianSmoothing(developers) {
+  if (!developers || developers.length === 0) return developers;
+
+  const priorMean = developers.reduce((sum, d) => sum + d.finalScore, 0) / developers.length;
+
+  const sizes = developers.map((d) => d.contributionSize).sort((a, b) => a - b);
+  const mid = Math.floor(sizes.length / 2);
+  const medianSize = sizes.length % 2 !== 0
+    ? sizes[mid]
+    : (sizes[mid - 1] + sizes[mid]) / 2;
+  const priorWeight = Math.max(medianSize, MIN_BASELINE_WEIGHT);
+
+  return developers.map((dev) => {
+    const { finalScore, contributionSize } = dev;
+
+    if (contributionSize === 0) {
+      return { ...dev, rawScore: finalScore, finalScore: Math.round(priorMean * 10) / 10 };
+    }
+
+    const adjusted = (finalScore * contributionSize + priorMean * priorWeight)
+      / (contributionSize + priorWeight);
+    const clamped = Math.max(0, Math.min(100, adjusted));
+
+    return { ...dev, rawScore: finalScore, finalScore: Math.round(clamped * 10) / 10 };
+  });
 }
 
 export function getGrade(score) {

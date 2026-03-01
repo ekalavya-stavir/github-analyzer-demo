@@ -46,6 +46,7 @@ ${getStyles()}
 <div class="container">
   ${renderHeader(repos, days, sinceDate, generatedAt)}
   ${renderDashboard(repos, days, sortedDevs, topPerformer, reviewOnly.length)}
+  ${renderPodium(sortedDevs)}
   ${renderScoreTable(sortedDevs)}
   ${renderModal()}
   ${renderReviewOnlySection(reviewOnly)}
@@ -117,6 +118,51 @@ function renderDashboard(repos, days, developers, topPerformer, reviewOnlyCount)
         </div>
         <div class="stat-detail">Score: ${topPerformer.finalScore}/100</div>
       </div>` : ''}
+    </div>
+  </section>`;
+}
+
+function renderPodium(developers) {
+  if (developers.length < 2) return '';
+
+  const top3 = developers.slice(0, 3);
+  const podiumOrder = top3.length === 3
+    ? [top3[1], top3[0], top3[2]]
+    : [top3[1], top3[0]];
+  const heights = ['140px', '180px', '110px'];
+  const ranks = [2, 1, 3];
+  const medals = ['\uD83E\uDD48', '\uD83E\uDD47', '\uD83E\uDD49'];
+
+  const pillars = podiumOrder.map((dev, i) => {
+    if (!dev) return '';
+    const grade = getGrade(dev.finalScore);
+    const avatarUrl = dev.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(dev.login)}&size=80&background=random`;
+    const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(dev.login)}&size=80&background=random`;
+    const rank = ranks[i];
+    const isFirst = rank === 1;
+
+    return `
+      <div class="podium-slot ${isFirst ? 'podium-first' : ''}">
+        <div class="podium-avatar-wrap">
+          <img class="podium-avatar ${isFirst ? 'podium-avatar-lg' : ''}" src="${avatarUrl}" alt="${escapeHtml(dev.login)}" onerror="this.src='${fallback}'">
+          <span class="podium-medal">${medals[i]}</span>
+        </div>
+        <div class="podium-name">${escapeHtml(dev.login)}</div>
+        <div class="podium-score" style="color: ${grade.color}">
+          ${dev.finalScore}<span class="score-max">/100</span>
+        </div>
+        <span class="grade-badge" style="background: ${grade.color}">${grade.grade}</span>
+        <div class="podium-bar" style="height: ${heights[i]}; background: linear-gradient(0deg, ${grade.color}22, ${grade.color}08);">
+          <span class="podium-rank">${rank}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+  <section class="podium-section">
+    <h2 class="section-title">Top Performers</h2>
+    <div class="podium">
+      ${pillars}
     </div>
   </section>`;
 }
@@ -406,6 +452,107 @@ function getStyles() {
     .grade-badge { padding: 2px 8px; font-size: 0.85rem; }
     .grade-badge-sm { padding: 2px 6px; font-size: 0.7rem; border-radius: 4px; }
     .grade-badge-lg { padding: 4px 14px; font-size: 1.1rem; border-radius: 8px; }
+
+    /* --- Podium --- */
+    .podium-section { margin-bottom: 40px; }
+
+    .podium {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 20px;
+      padding: 20px 0 0;
+    }
+
+    .podium-slot {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      min-width: 120px;
+    }
+
+    .podium-first .podium-name { font-size: 1rem; }
+
+    .podium-avatar-wrap {
+      position: relative;
+      margin-bottom: 4px;
+    }
+
+    .podium-avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: 3px solid var(--border);
+      transition: transform 0.2s;
+    }
+
+    .podium-first .podium-avatar,
+    .podium-avatar-lg {
+      width: 72px;
+      height: 72px;
+    }
+
+    .podium-avatar-wrap:hover .podium-avatar {
+      transform: scale(1.08);
+    }
+
+    .podium-medal {
+      position: absolute;
+      bottom: -4px;
+      right: -4px;
+      font-size: 1.3rem;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+    }
+
+    .podium-name {
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text);
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .podium-score {
+      font-weight: 800;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+
+    .podium-first .podium-score {
+      font-size: 1.4rem;
+    }
+
+    .podium-bar {
+      width: 100%;
+      border-radius: 8px 8px 0 0;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 12px;
+      min-width: 100px;
+    }
+
+    .podium-rank {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--text-dim);
+      opacity: 0.5;
+    }
+
+    .podium-first .podium-rank {
+      font-size: 2.5rem;
+    }
+
+    @media (max-width: 640px) {
+      .podium { gap: 10px; }
+      .podium-slot { min-width: 90px; }
+      .podium-avatar { width: 44px; height: 44px; }
+      .podium-first .podium-avatar, .podium-avatar-lg { width: 56px; height: 56px; }
+      .podium-bar { min-width: 80px; }
+    }
 
     /* --- Score Table --- */
     .table-section { margin-bottom: 40px; }
