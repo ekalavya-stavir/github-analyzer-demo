@@ -271,7 +271,7 @@ function renderReviewOnlySection(reviewOnlyDevs) {
                   <div class="evidence-item">
                     <div class="evidence-header">
                       <code class="evidence-file">${escapeHtml(ev.file)}</code>
-                      <span class="evidence-issue evidence-issue-${ev.issue?.replace(/[^a-z-]/g, '') || 'default'}">${escapeHtml(ev.issue)}</span>
+                      <span class="evidence-issue" data-issue="${escapeHtml(ev.issue)}">${escapeHtml(ev.issue)}</span>
                     </div>
                     ${ev.snippet ? `<pre class="evidence-snippet">${escapeHtml(ev.snippet)}</pre>` : ''}
                   </div>
@@ -308,6 +308,7 @@ function getEmbeddedData(sortedDevs) {
     login: dev.login,
     avatar: dev.avatar || '',
     finalScore: dev.finalScore,
+    stats: dev.stats || {},
     metrics: Object.fromEntries(
       METRIC_KEYS.map((key) => [key, {
         score: dev.metrics?.[key]?.score ?? 0,
@@ -768,6 +769,41 @@ function getStyles() {
       line-height: 1;
     }
 
+    /* --- Volume Summary --- */
+    .volume-summary {
+      display: flex;
+      gap: 12px;
+      margin: 16px 0;
+      flex-wrap: wrap;
+    }
+
+    .volume-item {
+      flex: 1;
+      min-width: 100px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 10px;
+      text-align: center;
+    }
+
+    .volume-value {
+      display: block;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1.2;
+    }
+
+    .volume-label {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-top: 4px;
+    }
+
     .modal-radar {
       text-align: center;
       margin: 16px 0;
@@ -919,6 +955,77 @@ function getStyles() {
       color: var(--text-dim);
     }
 
+    /* --- Issue Tooltips --- */
+    .issue-tooltip-wrap {
+      position: relative;
+      display: inline-block;
+    }
+
+    .evidence-issue.has-tooltip {
+      cursor: pointer;
+      border-bottom: 1px dashed currentColor;
+    }
+
+    .evidence-issue.has-tooltip:hover {
+      filter: brightness(1.2);
+    }
+
+    .issue-tooltip {
+      display: none;
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 6px);
+      transform: translateX(-50%);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      width: 320px;
+      z-index: 100;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      font-size: 0.78rem;
+      line-height: 1.5;
+      color: var(--text-muted);
+      text-align: left;
+      font-weight: 400;
+    }
+
+    .issue-tooltip::before {
+      content: '';
+      position: absolute;
+      top: -5px;
+      left: 50%;
+      transform: translateX(-50%) rotate(45deg);
+      width: 8px;
+      height: 8px;
+      background: var(--bg);
+      border-left: 1px solid var(--border);
+      border-top: 1px solid var(--border);
+    }
+
+    .issue-tooltip.show {
+      display: block;
+    }
+
+    .issue-tooltip-title {
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+      font-size: 0.82rem;
+    }
+
+    .issue-tooltip-fix {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border);
+      color: var(--green);
+      font-size: 0.75rem;
+    }
+
+    .issue-tooltip-fix strong {
+      color: var(--green);
+    }
+
     .evidence-snippet {
       background: rgba(15, 23, 42, 0.6);
       padding: 8px 12px;
@@ -1058,6 +1165,115 @@ function getStyles() {
 
 function getScripts() {
   return `
+    var ISSUE_TOOLTIPS = {
+      // Readability issues
+      'loose-equality': { title: 'Loose Equality (==)', desc: 'Using == instead of === can cause unexpected type coercion, leading to subtle bugs.', fix: 'Always use === and !== for comparisons. Enable the eqeqeq ESLint rule.' },
+      'loose-inequality': { title: 'Loose Inequality (!=)', desc: 'Using != instead of !== can cause unexpected type coercion, leading to subtle bugs.', fix: 'Always use !== for inequality checks. Enable the eqeqeq ESLint rule.' },
+      'deep-nesting': { title: 'Deep Nesting', desc: 'Code nested more than 4 levels deep is hard to read and reason about. It often signals that logic should be extracted.', fix: 'Use early returns (guard clauses), extract nested logic into separate functions, or use switch/map patterns.' },
+      'magic-number': { title: 'Magic Number', desc: 'Unnamed numeric literals make code harder to understand and maintain. The intent behind the number is unclear.', fix: 'Extract magic numbers into named constants (e.g., const MAX_RETRIES = 3) to convey meaning.' },
+      'long-function': { title: 'Long Function (>30 lines)', desc: 'Functions exceeding 30 lines are harder to test, understand, and maintain.', fix: 'Break long functions into smaller, focused functions. Each function should do one thing well.' },
+      'var-usage': { title: 'var Usage', desc: 'var has function scope and hoisting, which can lead to bugs. It is considered legacy JavaScript.', fix: 'Use const by default, and let when reassignment is needed. Never use var in modern codebases.' },
+      'console-statement': { title: 'Console Statement', desc: 'Console.log/debug/info statements left in production code create noise and can leak sensitive information.', fix: 'Remove console statements before merging, or use a proper logging library with log levels.' },
+      'alert-call': { title: 'Alert Call', desc: 'window.alert() blocks the UI thread and provides a poor user experience.', fix: 'Use a modal component, toast notification, or proper UI feedback instead of alert().' },
+      'eval-usage': { title: 'eval() Usage', desc: 'eval() executes arbitrary strings as code, creating severe security vulnerabilities (XSS, code injection).', fix: 'Avoid eval() entirely. Use JSON.parse() for data, Function constructor as a last resort, or refactor the logic.' },
+      'document-write': { title: 'document.write()', desc: 'document.write() can overwrite the entire page if called after load and blocks parsing.', fix: 'Use DOM manipulation methods like createElement, appendChild, or innerHTML on specific elements.' },
+      'string-timeout': { title: 'String setTimeout', desc: 'Passing a string to setTimeout is similar to eval() — it is a security risk and prevents optimizations.', fix: 'Pass a function reference instead: setTimeout(myFunction, 1000) or setTimeout(() => { ... }, 1000).' },
+      'single-char-var': { title: 'Single-char Variable', desc: 'Variables named with a single character (e.g., x, i outside loops) are cryptic and hurt readability.', fix: 'Use descriptive names that convey the variable purpose. Exception: loop counters (i, j) are acceptable.' },
+      'vague-name': { title: 'Vague Variable Name', desc: 'Generic names like data, tmp, result, obj convey no meaning about what the variable holds.', fix: 'Use specific, descriptive names: userData, tempFilePath, queryResult, configOptions.' },
+      'numbered-name': { title: 'Numbered Variable Name', desc: 'Names like item1, item2 suggest the code should use an array or better abstraction.', fix: 'Use arrays, maps, or descriptive names instead of numbered variables.' },
+      'inconsistent-case': { title: 'Inconsistent Casing', desc: 'Mixed naming conventions (camelCase vs UPPER_CASE) in the same scope reduce readability.', fix: 'Follow consistent naming conventions: camelCase for variables/functions, UPPER_CASE for constants, PascalCase for classes.' },
+
+      // Maintainability issues
+      'any-type': { title: 'any Type Usage', desc: 'Using TypeScript any type disables type checking for that value, hiding potential bugs.', fix: 'Use specific types, generics, unknown, or union types instead. Create interfaces for complex shapes.' },
+      'fixme-comment': { title: 'FIXME Comment', desc: 'FIXME indicates a known bug or broken behavior that needs to be addressed.', fix: 'Fix the issue and remove the FIXME, or create a tracked ticket and reference it in the comment.' },
+      'hack-comment': { title: 'HACK Comment', desc: 'HACK indicates a workaround or shortcut that bypasses proper design, often fragile.', fix: 'Replace the hack with a proper solution. If a hack is truly needed, document why and track it as tech debt.' },
+      'empty-catch': { title: 'Empty Catch Block', desc: 'Silently swallowing errors hides bugs and makes debugging extremely difficult.', fix: 'At minimum, log the error. Better yet, handle it appropriately or re-throw if you cannot handle it.' },
+      'large-file': { title: 'Large File (>300 lines)', desc: 'Files with more than 300 lines of added code are harder to navigate, review, and maintain.', fix: 'Split into smaller, focused modules. Apply the Single Responsibility Principle at the file level.' },
+      'long-if-chain': { title: 'Long If-Else Chain', desc: 'Multiple if-else-if blocks are hard to read and extend. Adding a new case means modifying existing code.', fix: 'Use a strategy map/object, switch statement, or polymorphism to handle multiple branches.' },
+      'string-case': { title: 'String Case Statement', desc: 'Switching on string literals is fragile — typos will not be caught at compile time.', fix: 'Use an enum or constants map for the string values to catch typos early.' },
+      'promise-chain': { title: 'Nested Promise Chain', desc: 'Chaining .then().then() deeply makes error handling and control flow hard to follow.', fix: 'Use async/await for cleaner, more readable asynchronous code.' },
+      'callback-pattern': { title: 'Callback Pattern', desc: 'Callback-heavy code can lead to "callback hell" with deeply nested, hard-to-read logic.', fix: 'Use Promises or async/await to flatten asynchronous control flow.' },
+      'numbered-variable': { title: 'Numbered Variable', desc: 'Variables like data1, data2 suggest a missing abstraction — the code should likely use an array or object.', fix: 'Use arrays, maps, or more descriptive names to group related data.' },
+
+      // SOLID issues
+      'SRP-too-many-methods': { title: 'SRP: Too Many Methods', desc: 'A file with more than 15 methods likely has too many responsibilities, violating the Single Responsibility Principle.', fix: 'Split into focused classes/modules, each handling one responsibility.' },
+      'SRP-large-file': { title: 'SRP: Large File', desc: 'A file with 300+ lines often means multiple concerns are mixed together.', fix: 'Extract related logic into separate modules. Each file should have a clear, single purpose.' },
+      'direct-instantiation': { title: 'DIP: Direct Instantiation', desc: 'Using new ClassName() creates tight coupling. The code depends on a concrete class rather than an abstraction.', fix: 'Use dependency injection — accept dependencies as constructor/function parameters instead of creating them.' },
+      'relative-require': { title: 'DIP: Relative Require', desc: 'Deep relative requires (require("../../...")) create tight structural coupling between modules.', fix: 'Use path aliases, barrel exports, or a dependency injection container to reduce coupling.' },
+      'relative-import': { title: 'DIP: Relative Import', desc: 'Relative imports with many ../ create fragile paths that break during refactoring.', fix: 'Use path aliases (@/components/...) or barrel exports (index.js) to create stable import paths.' },
+      'instanceof-check': { title: 'OCP: instanceof Check', desc: 'Checking instanceof couples code to specific types and requires modification when new types are added.', fix: 'Use polymorphism — define a common interface and let each type implement its own behavior.' },
+      'typeof-check': { title: 'OCP: typeof Check', desc: 'typeof checks for branching logic suggest the code is not open for extension without modification.', fix: 'Use polymorphism or strategy patterns instead of type-checking branching.' },
+      'type-switch': { title: 'OCP: Type Switch', desc: 'Switching on a type field requires modifying existing code every time a new type is added.', fix: 'Use a strategy map or polymorphism so new types can be added without changing existing code.' },
+      'type-if-check': { title: 'OCP: Type If-Check', desc: 'Branching on a type property is fragile and violates the Open/Closed Principle.', fix: 'Replace with polymorphism or a lookup table keyed by type.' },
+      'long-param-list': { title: 'ISP: Long Parameter List', desc: 'Functions with very long parameter lists are hard to call correctly and signal a need for grouping.', fix: 'Use an options/config object parameter to group related parameters.' },
+      'large-destructured-param': { title: 'ISP: Large Destructured Param', desc: 'Destructuring a huge object in parameters means the function depends on too many things.', fix: 'Split into smaller functions that each accept only what they need.' },
+      'global-access': { title: 'Coupling: Global Access', desc: 'Accessing global/window/process.env directly creates hidden dependencies and makes testing difficult.', fix: 'Inject configuration and global state as parameters. Use environment abstraction layers.' },
+      'deep-property-chain': { title: 'Coupling: Deep Property Chain', desc: 'Long chains like a.b.c.d.e indicate high coupling — the code knows too much about another object structure.', fix: 'Apply the Law of Demeter: only talk to immediate neighbors. Introduce helper methods or facades.' },
+      'god-class-manager': { title: 'God Class: Manager', desc: 'Classes named *Manager often accumulate too many responsibilities and become hard to maintain.', fix: 'Split into focused service classes with specific, well-defined responsibilities.' },
+      'god-class-handler': { title: 'God Class: Handler', desc: 'Large *Handler classes often handle too many cases and grow unbounded.', fix: 'Use a chain-of-responsibility or strategy pattern to distribute handling logic.' },
+      'mixed-concerns': { title: 'Mixed Concerns', desc: 'Mixing Controller and Service logic in one class violates separation of concerns.', fix: 'Separate into distinct Controller (routing/request) and Service (business logic) classes.' },
+      'util-class': { title: 'Utility Class', desc: 'Util classes often become dumping grounds for unrelated code, making them hard to maintain.', fix: 'Group utilities by domain (stringUtils, dateUtils) and consider if they belong in specific modules.' },
+      'helper-class': { title: 'Helper Class', desc: 'Helper classes, like utils, tend to accumulate unrelated functions over time.', fix: 'Move helper logic closer to where it is used, or group helpers by specific domain concern.' },
+
+      // Complexity issues
+      'high-complexity': { title: 'High Cyclomatic Complexity', desc: 'Adding many decision points (if, else, for, while, switch cases) makes code paths exponentially harder to test.', fix: 'Extract complex conditionals into well-named functions. Reduce branching with early returns or polymorphism.' },
+      'high-complexity-line': { title: 'High Complexity Line', desc: 'This line adds decision points (if/else/for/while/ternary) that increase the number of code paths.', fix: 'Simplify conditional logic, use guard clauses, or extract conditions into descriptive boolean variables.' },
+
+      // N+1 Query issues
+      'n-plus-one-query': { title: 'N+1 Query Pattern', desc: 'A database query inside a loop executes N additional queries — one per iteration — causing severe performance degradation.', fix: 'Use eager loading (e.g., with(), include()), batch queries, or query outside the loop and index the results.' },
+      'n-plus-one-fix': { title: 'N+1 Query Fixed', desc: 'A previously detected N+1 query pattern has been resolved in this code change.', fix: 'No action needed — this is a positive finding.' },
+
+      // PR Size issues
+      'xl-pr': { title: 'Extra-Large PR', desc: 'PRs with 1000+ lines changed are extremely difficult to review thoroughly, leading to missed issues.', fix: 'Break into smaller, focused PRs. Ship incremental changes that each address one concern.' },
+      'large-pr': { title: 'Large PR', desc: 'PRs with 500-1000 lines are hard to review effectively. Review quality drops significantly above 400 lines.', fix: 'Split into smaller PRs. Use feature flags to ship incomplete features safely.' },
+      'medium-pr': { title: 'Medium PR', desc: 'A moderately-sized PR. Ideally PRs should be smaller for faster review cycles.', fix: 'Consider whether this PR could be split into 2-3 focused changes.' },
+      'small-pr': { title: 'Small PR', desc: 'A well-sized PR that is easy to review and provides fast feedback cycles.', fix: 'Great size — keep it up!' },
+      'xs-pr': { title: 'Extra-Small PR', desc: 'A tiny, focused change — ideal for quick reviews and low risk.', fix: 'Perfect size for fast iteration!' },
+
+      // PR Review issues
+      'below-target': { title: 'Below Target', desc: 'This metric is below the expected target for the team.', fix: 'Review more PRs and provide constructive comments to help improve code quality across the team.' },
+      'meets-target': { title: 'Meets Target', desc: 'This metric meets or exceeds the expected target. Good work!', fix: 'Keep it up!' },
+
+      // Contribution issues
+      'above-average': { title: 'Above Average', desc: 'The developer contribution volume is above the team average.', fix: 'Healthy pace — just ensure quality is maintained alongside quantity.' },
+      'below-average': { title: 'Below Average', desc: 'The developer contribution volume is below the team average.', fix: 'Consider if there are blockers. Low volume is not always bad — it could indicate focus on complex work or reviews.' },
+      'high-contributor': { title: 'High Contributor', desc: 'This developer is in the top buckets for code output.', fix: 'Great output! Ensure code review quality does not suffer from pace.' },
+      'mid-contributor': { title: 'Mid Contributor', desc: 'This developer has a moderate contribution volume — around the team median.', fix: 'Solid pace. Look for opportunities to take on impactful work.' },
+      'low-contributor': { title: 'Low Contributor', desc: 'This developer is in the lower buckets for code output.', fix: 'Could indicate focus on reviews, mentoring, or complex problems. Discuss context.' },
+    };
+
+    function renderIssueTooltip(issue) {
+      var tip = ISSUE_TOOLTIPS[issue];
+      if (!tip) return '<span class="evidence-issue">' + esc(issue) + '</span>';
+      var id = 'tip-' + Math.random().toString(36).substring(2, 8);
+      return '<span class="issue-tooltip-wrap">' +
+        '<span class="evidence-issue has-tooltip" data-tip="' + id + '" onclick="toggleTooltip(this.dataset.tip, event)">' + esc(issue) + ' \u24D8</span>' +
+        '<div class="issue-tooltip" id="' + id + '">' +
+        '<div class="issue-tooltip-title">' + esc(tip.title) + '</div>' +
+        '<div>' + esc(tip.desc) + '</div>' +
+        '<div class="issue-tooltip-fix"><strong>Fix:</strong> ' + esc(tip.fix) + '</div>' +
+        '</div></span>';
+    }
+
+    function toggleTooltip(id, event) {
+      event.stopPropagation();
+      // Close any other open tooltips
+      var allTips = document.querySelectorAll('.issue-tooltip.show');
+      for (var i = 0; i < allTips.length; i++) {
+        if (allTips[i].id !== id) allTips[i].classList.remove('show');
+      }
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('show');
+    }
+
+    // Close tooltips when clicking outside
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('.issue-tooltip-wrap')) {
+        var allTips = document.querySelectorAll('.issue-tooltip.show');
+        for (var i = 0; i < allTips.length; i++) allTips[i].classList.remove('show');
+      }
+    });
+
     function getGradeClient(score) {
       if (score >= 90) return { grade: 'A+', color: '#10b981' };
       if (score >= 80) return { grade: 'A', color: '#34d399' };
@@ -1072,6 +1288,11 @@ function getScripts() {
       var d = document.createElement('div');
       d.appendChild(document.createTextNode(String(str)));
       return d.innerHTML;
+    }
+    function handleAvatarError(img) {
+      img.onerror = null;
+      var fb = img.getAttribute('data-fallback');
+      if (fb) img.src = fb;
     }
 
     function toggleSection(id) {
@@ -1174,12 +1395,7 @@ function getScripts() {
           h += '<div class="evidence-item"><div class="evidence-header">';
           h += '<code class="evidence-file">' + esc(ev.file) + '</code>';
           if (ev.line > 0) h += '<span class="evidence-line">line ' + ev.line + '</span>';
-          var issueClass = 'evidence-issue';
-          if (ev.issue) {
-            var slug = ev.issue.replace(/[^a-z-]/g, '');
-            if (slug) issueClass += ' evidence-issue-' + slug;
-          }
-          h += '<span class="' + issueClass + '">' + esc(ev.issue) + '</span>';
+          h += renderIssueTooltip(ev.issue);
           h += '</div>';
           if (ev.snippet) h += '<pre class="evidence-snippet">' + esc(ev.snippet) + '</pre>';
           h += '</div>';
@@ -1203,13 +1419,24 @@ function getScripts() {
       h += '<div class="modal-dev-header">';
       var avatarUrl = dev.avatar || ('https://ui-avatars.com/api/?name=' + encodeURIComponent(dev.login) + '&size=64&background=random');
       var fallbackUrl = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(dev.login) + '&size=64&background=random';
-      h += '<img class="avatar" src="' + avatarUrl + '" alt="' + esc(dev.login) + '" onerror="this.src=\\'' + fallbackUrl + '\\'">';
+      h += '<img class="avatar" src="' + avatarUrl + '" alt="' + esc(dev.login) + '" onerror="handleAvatarError(this)" data-fallback="' + esc(fallbackUrl) + '">';
       h += '<div><h2>' + esc(dev.login) + '</h2>';
       h += '<a href="https://github.com/' + encodeURIComponent(dev.login) + '" target="_blank" class="github-link">@' + esc(dev.login) + '</a></div>';
       h += '<div class="modal-score" style="color:' + grade.color + '">';
       h += '<span class="modal-score-num">' + dev.finalScore + '</span><span class="score-max">/100</span> ';
       h += '<span class="grade-badge-lg" style="background:' + grade.color + '">' + grade.grade + '</span>';
       h += '</div></div>';
+
+      // Contribution volume summary
+      var st = dev.stats || {};
+      if (st.commitCount || st.totalLinesCommitted) {
+        h += '<div class="volume-summary">';
+        h += '<div class="volume-item"><span class="volume-value">' + (st.commitCount || 0) + '</span><span class="volume-label">Commits</span></div>';
+        h += '<div class="volume-item"><span class="volume-value">' + (st.totalLinesCommitted || 0).toLocaleString() + '</span><span class="volume-label">Lines Committed</span></div>';
+        h += '<div class="volume-item"><span class="volume-value">' + (st.avgCommitSize || 0) + '</span><span class="volume-label">Avg Lines/Commit</span></div>';
+        h += '<div class="volume-item"><span class="volume-value">' + (st.prsAuthored || 0) + '</span><span class="volume-label">PRs Authored</span></div>';
+        h += '</div>';
+      }
 
       h += '<div class="modal-radar"><canvas id="' + canvasId + '" width="380" height="380"></canvas></div>';
 
@@ -1218,7 +1445,7 @@ function getScripts() {
         var key = METRIC_KEYS[k];
         var m = dev.metrics[key] || { score: 0 };
         var barColor = getGradeClient(m.score * 10).color;
-        h += '<tr onclick="openMetricModal(' + devIdx + ',\\'' + key + '\\')">';
+      h += '<tr onclick="openMetricModal(' + devIdx + ',' + JSON.stringify(key) + ')">';
         h += '<td>' + METRIC_LABELS[key] + '</td>';
         h += '<td class="score-cell" style="color:' + barColor + '">' + m.score + '/10</td>';
         h += '<td><div class="metric-bar"><div class="metric-bar-fill" style="width:' + (m.score * 10) + '%;background:' + barColor + '"></div></div></td>';
@@ -1362,5 +1589,32 @@ function getScripts() {
         ctx.stroke();
       }
     }
+
+    // Upgrade static evidence-issue badges (review-only section) with tooltips on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      var staticBadges = document.querySelectorAll('.evidence-issue[data-issue]');
+      for (var i = 0; i < staticBadges.length; i++) {
+        var badge = staticBadges[i];
+        var issue = badge.getAttribute('data-issue');
+        var tip = ISSUE_TOOLTIPS[issue];
+        if (!tip) continue;
+        var wrap = document.createElement('span');
+        wrap.className = 'issue-tooltip-wrap';
+        badge.parentNode.insertBefore(wrap, badge);
+        wrap.appendChild(badge);
+        badge.classList.add('has-tooltip');
+        badge.innerHTML = esc(issue) + ' \\u24D8';
+        var tipId = 'tip-static-' + i;
+        badge.dataset.tip = tipId;
+        badge.setAttribute('onclick', 'toggleTooltip(this.dataset.tip, event)');
+        var tipEl = document.createElement('div');
+        tipEl.className = 'issue-tooltip';
+        tipEl.id = tipId;
+        tipEl.innerHTML = '<div class=\"issue-tooltip-title\">' + esc(tip.title) + '</div>' +
+          '<div>' + esc(tip.desc) + '</div>' +
+          '<div class=\"issue-tooltip-fix\"><strong>Fix:</strong> ' + esc(tip.fix) + '</div>';
+        wrap.appendChild(tipEl);
+      }
+    });
   `;
 }

@@ -40,11 +40,11 @@ export function computeContributionBuckets(linesPerDev) {
 /**
  * Scores a single developer based on pre-computed bucket boundaries.
  *
- * @param {{ added: number, changed: number, total: number }} developerData
+ * @param {{ added: number, changed: number, total: number, commitCount?: number, totalLinesCommitted?: number, avgCommitSize?: number }} developerData
  * @param {{ min, max, bucketWidth, totalLines, devCount }} bucketStats
  */
 export function analyzeContribution(developerData, bucketStats) {
-  const { added, changed, total } = developerData;
+  const { added, changed, total, commitCount = 0, totalLinesCommitted = 0, avgCommitSize = 0 } = developerData;
   const { min, max, bucketWidth, totalLines, devCount } = bucketStats;
 
   if (devCount === 0 || totalLines === 0) {
@@ -91,6 +91,9 @@ export function analyzeContribution(developerData, bucketStats) {
       bucket,
       bucketWidth: Math.round(bucketWidth),
       percentage,
+      commitCount,
+      totalLinesCommitted,
+      avgCommitSize,
       evidence: [
         {
           file: 'Lines Added', line: 0,
@@ -101,6 +104,11 @@ export function analyzeContribution(developerData, bucketStats) {
           file: 'Lines Changed', line: 0,
           snippet: 'This developer: ~' + changed + ' lines changed (deleted/modified) | Total (added + changed): ' + total,
           issue: 'overview',
+        },
+        {
+          file: 'Contribution Volume', line: 0,
+          snippet: commitCount + ' commits | ' + totalLinesCommitted + ' total lines committed | Avg ' + avgCommitSize + ' lines/commit',
+          issue: 'volume',
         },
         {
           file: 'Contribution Share', line: 0,

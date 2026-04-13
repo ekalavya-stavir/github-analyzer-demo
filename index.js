@@ -181,7 +181,7 @@ async function main() {
   }
 
   const developerScores = [];
-  const CONCURRENCY_LIMIT = 2;
+  const CONCURRENCY_LIMIT = 4;
 
   for (let i = 0; i < activeLogins.length; i += CONCURRENCY_LIMIT) {
     const batchLogins = activeLogins.slice(i, i + CONCURRENCY_LIMIT);

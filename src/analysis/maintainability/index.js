@@ -29,7 +29,6 @@ const DOC_PATTERNS = [
 
 const TECH_DEBT_PATTERNS = [
   { pattern: /\bany\b/g, weight: 0.3, name: 'any-type' },
-  { pattern: /\/\/\s*TODO/gi, weight: 0.2, name: 'todo-comment' },
   { pattern: /\/\/\s*FIXME/gi, weight: 0.5, name: 'fixme-comment' },
   { pattern: /\/\/\s*HACK/gi, weight: 0.7, name: 'hack-comment' },
   { pattern: /catch\s*\(\s*\w*\s*\)\s*\{\s*\}/g, weight: 1.5, name: 'empty-catch' },

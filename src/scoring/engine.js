@@ -96,7 +96,7 @@ function getStrengthDescription(metric, data) {
     prSize: `Well-sized PRs with median ${data.details?.medianChangesPerPR || 0} changes.`,
     prReview: `Strong reviewer — reviewed ${data.details?.prsReviewed || 0} PRs with ${data.details?.reviewComments || 0} comments.`,
     duplication: `Minimal code duplication (${data.details?.duplicationRatio || 0} ratio).`,
-    contribution: `High contributor — ${data.details?.total || 0} lines changed (bucket ${data.details?.bucket || '?'}/10, ${data.details?.percentage || 0}% of total).`,
+    contribution: `High contributor — ${data.details?.total || 0} lines changed (bucket ${data.details?.bucket || '?'}/10, ${data.details?.percentage || 0}% of total). ${data.details?.commitCount || 0} commits, avg ${data.details?.avgCommitSize || 0} lines/commit.`,
   };
   return descriptions[metric] || 'Good performance in this area.';
 }
@@ -111,7 +111,7 @@ function getImprovementSuggestion(metric, data) {
     prSize: `Break down large PRs (median: ${data.details?.medianChangesPerPR || 0} changes) into smaller, focused ones.`,
     prReview: `Review more PRs (${data.details?.prsReviewed || 0}/${data.details?.totalPRs || '?'}) and add more comments (${data.details?.reviewComments || 0} given, expect 1 per 50 lines).`,
     duplication: `Reduce code duplication (${data.details?.duplicateBlocks || 0} blocks found). Extract shared logic.`,
-    contribution: `Increase contributions — ${data.details?.total || 0} lines changed (bucket ${data.details?.bucket || '?'}/10). Team range: ${data.details?.min || 0}–${data.details?.max || 0} lines.`,
+    contribution: `Increase contributions — ${data.details?.total || 0} lines changed (bucket ${data.details?.bucket || '?'}/10). ${data.details?.commitCount || 0} commits, avg ${data.details?.avgCommitSize || 0} lines/commit. Team range: ${data.details?.min || 0}–${data.details?.max || 0} lines.`,
   };
   return suggestions[metric] || 'Focus on improving this metric.';
 }
