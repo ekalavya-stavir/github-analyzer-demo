@@ -1,195 +1,168 @@
 /**
- * N+1 Query Detection Analyzer
+ * N+1 Query Detection Analyzer (AST Based)
  *
- * Detects potential N+1 query anti-patterns:
- * - ORM queries inside loops (Sequelize, TypeORM, Prisma, Mongoose)
- * - SQL queries inside loops
- * - API calls inside loops
- * - Missing eager loading patterns
+ * Detects potential N+1 query anti-patterns by identifying query-like
+ * method calls inside of loop structures (for, for-of, while, foreach) or
+ * iterative array methods (map, forEach, each) using Abstract Syntax Trees.
  *
- * Score: 0-10 (10 = no N+1 patterns, inverse scoring)
+ * Supports both JavaScript/TypeScript and PHP (Eloquent, Prisma, Sequelize, etc.)
  */
 
-const LOOP_PATTERNS = [
-  /\bfor\s*\(/,
-  /\bfor\s+of\b/,
-  /\bfor\s+in\b/,
-  /\bwhile\s*\(/,
-  /\.forEach\s*\(/,
-  /\.map\s*\(/,
-  /\.filter\s*\(/,
-  /\.reduce\s*\(/,
-  /\.flatMap\s*\(/,
-  /for\s+\w+\s+in\s+/,
-  /for\s+\w+,?\s*\w*\s+:?=?\s+range/,
-];
+const ORM_METHODS = new Set([
+  // Generic ORM / DB methods
+  'find', 'findOne', 'findAll', 'findMany', 'findUnique', 'findFirst',
+  'findById', 'findByPk', 'query', 'execute', 'select', 'insert', 'update', 'delete',
+  'insertOne', 'insertMany', 'create', 'createMany', 'save', 'count',
+  // Eloquent / Laravel specific
+  'first', 'firstOrFail', 'firstOrCreate', 'firstOrNew', 'firstWhere',
+  'get', 'all', 'pluck', 'value', 'chunk',
+  'where', 'whereIn', 'whereHas', 'whereNotIn',
+  'load', 'loadMissing', 'with',
+  'has', 'doesntHave',
+  'findOrFail', 'findOrNew',
+  'refresh', 'fresh',
+  'paginate', 'simplePaginate',
+  'attach', 'detach', 'sync',
+  'increment', 'decrement',
+  'updateOrCreate', 'updateOrInsert',
+  'associate', 'dissociate',
+]);
 
-const QUERY_PATTERNS = [
-  { pattern: /\.find\s*\(/g, name: 'orm-find' },
-  { pattern: /\.findOne\s*\(/g, name: 'orm-findOne' },
-  { pattern: /\.findAll\s*\(/g, name: 'orm-findAll' },
-  { pattern: /\.findMany\s*\(/g, name: 'prisma-findMany' },
-  { pattern: /\.findUnique\s*\(/g, name: 'prisma-findUnique' },
-  { pattern: /\.findFirst\s*\(/g, name: 'prisma-findFirst' },
-  { pattern: /\.findById\s*\(/g, name: 'orm-findById' },
-  { pattern: /\.findByPk\s*\(/g, name: 'sequelize-findByPk' },
-  { pattern: /\.query\s*\(/g, name: 'raw-query' },
-  { pattern: /\.execute\s*\(/g, name: 'execute-query' },
-  { pattern: /\.getRepository\s*\(/g, name: 'typeorm-getRepository' },
-  { pattern: /\.createQueryBuilder\s*\(/g, name: 'typeorm-queryBuilder' },
-  { pattern: /\bSELECT\b.*\bFROM\b/gi, name: 'sql-select' },
-  { pattern: /\bINSERT\b.*\bINTO\b/gi, name: 'sql-insert' },
-  { pattern: /\bUPDATE\b.*\bSET\b/gi, name: 'sql-update' },
-  { pattern: /\bDELETE\b.*\bFROM\b/gi, name: 'sql-delete' },
-  { pattern: /\bfetch\s*\(/g, name: 'api-fetch' },
-  { pattern: /\baxios\.\w+\s*\(/g, name: 'api-axios' },
-  { pattern: /\.get\s*\(\s*['"`]https?:/g, name: 'api-get' },
-  { pattern: /\.post\s*\(\s*['"`]https?:/g, name: 'api-post' },
-  { pattern: /\.populate\s*\(/g, name: 'mongoose-populate' },
-  { pattern: /\.aggregate\s*\(/g, name: 'mongoose-aggregate' },
-];
+const DB_OBJECTS = new Set([
+  'db', 'database', 'models', 'model', 'repository', 'collection'
+]);
 
-const EAGER_LOADING_PATTERNS = [
-  /include\s*:/,
-  /\.populate\s*\(/,
-  /\.join\s*\(/,
-  /\.leftJoin\s*\(/,
-  /\.innerJoin\s*\(/,
-  /relations\s*:/,
-  /\.eager\s*\(/,
-  /with\s*:/,
-  /preload\s*:/,
-];
-
-const CODE_FILE_EXTENSIONS = /\.(js|jsx|ts|tsx|py|java|go|rb|rs|cs|php)$/;
-
-export function analyzeNPlusOne(patches) {
-  if (!patches || patches.length === 0) {
-    return { score: 5, details: { violations: [], totalViolations: 0, linesAnalyzed: 0, evidence: [{ file: 'Summary', line: 0, snippet: 'No patches available for analysis', issue: 'no-data' }] } };
-  }
-
-  const codePatches = patches.filter((p) => CODE_FILE_EXTENSIONS.test(p.filename));
-  if (codePatches.length === 0) {
-    return { score: 8, details: { violations: [], totalViolations: 0, linesAnalyzed: 0, note: 'No code files', evidence: [{ file: 'Summary', line: 0, snippet: `${patches.length} files analyzed, none are code files`, issue: 'no-code-files' }] } };
-  }
-
+/**
+ * Traverses an AST to find instances of database queries inside loops.
+ * 
+ * @param {import('tree-sitter').SyntaxNode} astRoot 
+ * @returns {Array<{issue: string, startLine: number, endLine: number, snippet: string}>}
+ */
+export function detectNPlusOneQueries(astRoot) {
   const violations = [];
-  let totalLines = 0;
 
-  for (const file of codePatches) {
-    const addedLines = extractAddedLines(file.patch);
-    totalLines += addedLines.length;
-    const fileViolations = detectNPlusOneInFile(addedLines, file.filename);
-    violations.push(...fileViolations);
-  }
+  // Recursively traverse the AST
+  function traverse(node, inLoop = false) {
+    if (!node) return;
 
-  const totalViolations = violations.length;
-  const violationsPerKLOC = totalLines > 0 ? (totalViolations / totalLines) * 1000 : 0;
+    // Check if we are entering a loop context
+    const isLoop = isLoopNode(node) || isIterativeMethodCall(node);
+    const insideLoop = inLoop || isLoop;
 
-  let score;
-  if (totalViolations === 0) {
-    score = 10;
-  } else if (violationsPerKLOC < 1) {
-    score = 9;
-  } else if (violationsPerKLOC < 3) {
-    score = 8;
-  } else if (violationsPerKLOC < 5) {
-    score = 7;
-  } else if (violationsPerKLOC < 8) {
-    score = 6;
-  } else if (violationsPerKLOC < 12) {
-    score = 5;
-  } else if (violationsPerKLOC < 18) {
-    score = 4;
-  } else if (violationsPerKLOC < 25) {
-    score = 3;
-  } else {
-    score = 2;
-  }
-
-  return {
-    score: Math.round(score * 10) / 10,
-    details: {
-      violations: violations.slice(0, 20),
-      evidence: [
-        { file: 'Summary', line: 0, snippet: `${totalViolations} N+1 pattern${totalViolations !== 1 ? 's' : ''} detected in ${totalLines} lines (${Math.round(violationsPerKLOC * 10) / 10} per KLOC)`, issue: totalViolations === 0 ? 'clean' : 'overview' },
-        ...violations.slice(0, 14).map((v) => ({
-          file: v.file,
-          line: v.line,
-          snippet: v.snippet,
-          issue: v.type,
-        })),
-      ],
-      totalViolations,
-      linesAnalyzed: totalLines,
-      violationsPerKLOC: Math.round(violationsPerKLOC * 10) / 10,
-    },
-  };
-}
-
-function detectNPlusOneInFile(lines, filename) {
-  const violations = [];
-  let insideLoop = false;
-  let loopDepth = 0;
-  let loopStartLine = 0;
-  let braceCount = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    const isLoopStart = LOOP_PATTERNS.some((p) => p.test(trimmed));
-
-    if (isLoopStart) {
-      if (!insideLoop) {
-        insideLoop = true;
-        loopStartLine = i;
-        braceCount = 0;
-      }
-      loopDepth++;
+    // If we're inside a loop, look for database query calls
+    if (insideLoop && isDatabaseCall(node)) {
+      violations.push({
+        issue: 'n-plus-one-query',
+        startLine: node.startPosition.row + 1,
+        endLine: node.endPosition.row + 1,
+        snippet: node.text.substring(0, 100).replace(/\n/g, ' '),
+        evidence: 'Database or API call detected inside an iteration loop.'
+      });
+      // Don't flag multiple inner calls within the exact same statement to avoid spam
+      return;
     }
 
-    if (insideLoop) {
-      braceCount += (trimmed.match(/\{/g) || []).length;
-      braceCount -= (trimmed.match(/\}/g) || []).length;
-
-      for (const qp of QUERY_PATTERNS) {
-        if (qp.pattern.test(trimmed)) {
-          const hasEagerLoading = EAGER_LOADING_PATTERNS.some((ep) => {
-            const context = lines.slice(Math.max(0, i - 2), Math.min(lines.length, i + 3)).join('\n');
-            return ep.test(context);
-          });
-
-          if (!hasEagerLoading) {
-            violations.push({
-              file: filename,
-              line: i + 1,
-              type: qp.name,
-              snippet: trimmed.substring(0, 120),
-              loopStartLine: loopStartLine + 1,
-            });
-          }
-          break;
-        }
-      }
-
-      if (braceCount <= 0 && i > loopStartLine) {
-        loopDepth--;
-        if (loopDepth <= 0) {
-          insideLoop = false;
-          loopDepth = 0;
-        }
-      }
+    // Traverse children
+    for (let i = 0; i < node.childCount; i++) {
+      traverse(node.child(i), insideLoop);
     }
   }
 
+  traverse(astRoot);
   return violations;
 }
 
-function extractAddedLines(patch) {
-  if (!patch) return [];
-  return patch
-    .split('\n')
-    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
-    .map((line) => line.substring(1));
+/**
+ * Checks if a node is a loop construct (JS or PHP).
+ */
+function isLoopNode(node) {
+  return (
+    node.type === 'for_statement' ||
+    node.type === 'for_in_statement' ||
+    node.type === 'for_of_statement' ||
+    node.type === 'while_statement' ||
+    node.type === 'do_statement' ||
+    node.type === 'foreach_statement'       // PHP foreach
+  );
+}
+
+/**
+ * Checks if a node represents an iterative method call like .map(), .forEach(), .each()
+ * Works for both JS call_expression and PHP member_call_expression.
+ */
+function isIterativeMethodCall(node) {
+  // JS: call_expression, PHP: member_call_expression
+  if (node.type !== 'call_expression' && node.type !== 'member_call_expression') return false;
+
+  // Get the function being called
+  const functionNode = node.childForFieldName('function')   // JS
+    || node.childForFieldName('name');                       // PHP member_call_expression uses 'name'
+  
+  if (!functionNode) return false;
+
+  // JS: member_expression with a property
+  if (functionNode.type === 'member_expression') {
+    const propertyNode = functionNode.childForFieldName('property');
+    if (!propertyNode) return false;
+    return ['map', 'forEach', 'filter', 'reduce', 'each', 'flatMap'].includes(propertyNode.text);
+  }
+
+  // PHP: the function node for member_call_expression is the 'name' field directly
+  if (functionNode.type === 'name') {
+    return ['map', 'forEach', 'filter', 'reduce', 'each', 'flatMap'].includes(functionNode.text);
+  }
+
+  return false;
+}
+
+/**
+ * Checks if a node represents a database or ORM call.
+ * Handles JS (call_expression), PHP (member_call_expression, scoped_call_expression).
+ */
+function isDatabaseCall(node) {
+  let targetNode = node;
+
+  // Unwrap await
+  if (node.type === 'await_expression') {
+    targetNode = node.firstNamedChild;
+    if (!targetNode) return false;
+  }
+
+  // JS: call_expression, PHP: member_call_expression or scoped_call_expression
+  const isCallType = (
+    targetNode.type === 'call_expression' ||
+    targetNode.type === 'member_call_expression' ||
+    targetNode.type === 'scoped_call_expression'
+  );
+  if (!isCallType) return false;
+
+  let methodName = '';
+
+  if (targetNode.type === 'call_expression') {
+    // JS call_expression
+    const functionNode = targetNode.childForFieldName('function');
+    if (!functionNode) return false;
+
+    if (functionNode.type === 'member_expression') {
+      const propertyNode = functionNode.childForFieldName('property');
+      if (!propertyNode) return false;
+      methodName = propertyNode.text;
+    } else if (functionNode.type === 'identifier') {
+      methodName = functionNode.text;
+    } else {
+      return false;
+    }
+  } else if (targetNode.type === 'member_call_expression') {
+    // PHP: $object->method()
+    const nameNode = targetNode.childForFieldName('name');
+    if (!nameNode) return false;
+    methodName = nameNode.text;
+  } else if (targetNode.type === 'scoped_call_expression') {
+    // PHP: Class::method()
+    const nameNode = targetNode.childForFieldName('name');
+    if (!nameNode) return false;
+    methodName = nameNode.text;
+  }
+
+  return ORM_METHODS.has(methodName);
 }

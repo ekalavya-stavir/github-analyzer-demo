@@ -1162,11 +1162,15 @@ function getScripts() {
         h += '<div class="tag tag-amber" style="margin-top:8px"><strong>\\uD83D\\uDCC8 Needs Improvement</strong><span class="tag-desc">' + esc(improvement.suggestion) + '</span></div>';
       }
 
-      if (evidence.length > 0) {
-        h += '<h3>Evidence (' + evidence.length + ' item' + (evidence.length > 1 ? 's' : '') + ')</h3>';
+      // Filter out summary/meta entries — only show actual violation evidence
+      var META_ISSUES = ['overview', 'insufficient-data', 'no-data', 'no-code-files', 'clean', 'well-organized', 'structure-review'];
+      var realEvidence = evidence.filter(function(ev) { return META_ISSUES.indexOf(ev.issue) === -1; });
+
+      if (realEvidence.length > 0) {
+        h += '<h3>Evidence (' + realEvidence.length + ' item' + (realEvidence.length > 1 ? 's' : '') + ')</h3>';
         h += '<div class="evidence-list">';
-        for (var i = 0; i < evidence.length; i++) {
-          var ev = evidence[i];
+        for (var i = 0; i < realEvidence.length; i++) {
+          var ev = realEvidence[i];
           h += '<div class="evidence-item"><div class="evidence-header">';
           h += '<code class="evidence-file">' + esc(ev.file) + '</code>';
           if (ev.line > 0) h += '<span class="evidence-line">line ' + ev.line + '</span>';

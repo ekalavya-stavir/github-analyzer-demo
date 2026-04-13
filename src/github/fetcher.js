@@ -1,4 +1,8 @@
 import { paginate, request } from './client.js';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 export async function fetchRepoData(owner, repo, sinceDate) {
   const since = sinceDate.toISOString();
@@ -68,7 +72,8 @@ async function fetchPullRequests(owner, repo, sinceDate) {
 
 async function fetchPRDetails(owner, repo, pullRequests) {
   const results = [];
-  const batchSize = 5;
+  // Throttle API batch concurrency down to 2 instead of 5 (6 API requests total vs 15) to combat Github secondary limits
+  const batchSize = 2;
 
   for (let i = 0; i < pullRequests.length; i += batchSize) {
     const batch = pullRequests.slice(i, i + batchSize);
@@ -109,6 +114,11 @@ async function fetchPRDetails(owner, repo, pullRequests) {
       })
     );
     results.push(...batchResults.filter(Boolean));
+    
+    // Explicit sleep between execution bursts to satisfy Github abuse detection rate limits
+    if (i + batchSize < pullRequests.length) {
+      await new Promise((r) => setTimeout(r, 600));
+    }
   }
 
   return results;
@@ -183,6 +193,7 @@ export async function fetchCommitDetail(owner, repo, sha) {
     });
     return {
       sha: data.sha,
+      parentSha: (data.parents && data.parents.length > 0) ? data.parents[0].sha : null,
       files: (data.files || []).map((f) => ({
         filename: f.filename,
         status: f.status,
@@ -195,5 +206,92 @@ export async function fetchCommitDetail(owner, repo, sha) {
     };
   } catch {
     return null;
+  }
+}
+
+export async function fetchFileAtCommit(owner, repo, path, sha, clientRequest = request) {
+  try {
+    const response = await clientRequest('GET /repos/{owner}/{repo}/contents/{path}', {
+      owner,
+      repo,
+      path,
+      ref: sha,
+    });
+
+    // GitHub API returns base64 encoded content
+    if (response.data && response.data.content && response.data.encoding === 'base64') {
+      return Buffer.from(response.data.content, 'base64').toString('utf-8');
+    }
+
+    // For large files, GitHub returns download_url instead of content
+    if (response.data && response.data.download_url && !response.data.content) {
+      const rawResponse = await fetch(response.data.download_url);
+      if (rawResponse.ok) {
+        return await rawResponse.text();
+      }
+    }
+
+    // Fallback if not base64 for some reason
+    return typeof response.data?.content === 'string' ? response.data.content : '';
+  } catch (err) {
+    if (err.status === 404) {
+      throw new Error(`File ${path} not found at commit ${sha}`);
+    }
+    // GitHub returns 403 for files >1MB via Contents API, use Blob API as fallback
+    if (err.status === 403 || err.status === 422) {
+      try {
+        return await fetchLargeFileContent(owner, repo, path, sha, clientRequest);
+      } catch {
+        // If blob fallback also fails, return empty
+        return '';
+      }
+    }
+    throw err;
+  }
+}
+
+async function fetchLargeFileContent(owner, repo, path, sha, clientRequest = request) {
+  // For large files, use the Git Blob API via the tree
+  // First get the tree to find the blob SHA for this file
+  const treeResponse = await clientRequest('GET /repos/{owner}/{repo}/git/trees/{tree_sha}', {
+    owner,
+    repo,
+    tree_sha: sha,
+    recursive: true,
+  });
+
+  const fileEntry = treeResponse.data.tree.find(entry => entry.path === path);
+  if (!fileEntry || fileEntry.type !== 'blob') return '';
+
+  const blobResponse = await clientRequest('GET /repos/{owner}/{repo}/git/blobs/{file_sha}', {
+    owner,
+    repo,
+    file_sha: fileEntry.sha,
+  });
+
+  if (blobResponse.data && blobResponse.data.content && blobResponse.data.encoding === 'base64') {
+    return Buffer.from(blobResponse.data.content, 'base64').toString('utf-8');
+  }
+
+  return '';
+}
+
+export async function cloneRepository(owner, repo, token, destPath) {
+  console.log(`  📦 Cloning repository ${owner}/${repo} to speed up AST analysis...`);
+  const url = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+  await execFileAsync('git', ['clone', '--bare', url, destPath]);
+}
+
+export async function fetchLocalFileAtCommit(localPath, sha, filename) {
+  try {
+    const { stdout } = await execFileAsync('git', ['show', `${sha}:${filename}`], {
+      cwd: localPath,
+      maxBuffer: 50 * 1024 * 1024, // allow up to 50MB files
+      encoding: 'utf8',
+    });
+    return stdout;
+  } catch (err) {
+    // git show fails if the file doesn't exist in that commit
+    return '';
   }
 }

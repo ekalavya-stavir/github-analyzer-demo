@@ -35,6 +35,43 @@ export function extractVisibleLines(patch) {
 }
 
 /**
+ * Extracts the exact line numbers (integers) that were added or modified
+ * in a Git unified diff patch.
+ */
+export function extractModifiedLineNumbers(patch) {
+  if (!patch) return [];
+  const lines = patch.split('\n');
+  const lineNumbers = [];
+  let currentLine = 0;
+
+  for (const line of lines) {
+    if (line.startsWith('@@')) {
+      // e.g. @@ -10,3 +10,5 @@
+      const match = line.match(/\+([0-9]+)(?:,[0-9]+)?/);
+      if (match) {
+        currentLine = parseInt(match[1], 10);
+      }
+      continue;
+    }
+
+    if (line.startsWith('---') || line.startsWith('+++') || line === '\\ No newline at end of file') {
+      continue;
+    }
+
+    if (line.startsWith('+')) {
+      lineNumbers.push(currentLine);
+      currentLine++;
+    } else if (line.startsWith(' ')) {
+      currentLine++;
+    } else if (line.startsWith('-')) {
+      // Deletions don't increment the line number in the target file
+    }
+  }
+
+  return lineNumbers;
+}
+
+/**
  * Count function/method definitions in code text.
  * Targets actual declarations, not method calls.
  */

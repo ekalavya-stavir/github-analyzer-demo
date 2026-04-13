@@ -2,4 +2,4 @@
 # Lines starting with # are comments
 
 # Comma-separated list of usernames to exclude from analysis
-exclude_users=dependabot[bot],skStavir,copilot-pull-request-reviewer[bot],github-actions[bot]
+exclude_users=dependabot[bot],skStavir,Copilotcopilot,github-actions[bot]

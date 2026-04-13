@@ -116,3 +116,56 @@ export function analyzeContribution(developerData, bucketStats) {
     },
   };
 }
+
+/**
+ * Aggregates back-to-back commits by the same developer into groups exactly
+ * as defined in the AST Algorithm Phase 1 Optimization.
+ *
+ * @param {Array<{sha, parentSha, author, date, files: Array<{filename, addedLines}>}>} commits 
+ * @returns {Record<string, Array<{file, headSha, baseSha, unionModifiedLines}>>}
+ */
+export function aggregateDeveloperCommits(commits) {
+  // Sort chronologically just in case
+  const sorted = [...commits].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const devGroups = {};
+
+  for (const commit of sorted) {
+    const author = commit.author;
+    if (!devGroups[author]) {
+      devGroups[author] = [];
+    }
+
+    // Extract owner/repo from the commit's repo field (e.g. "owner/repoName")
+    let owner = '';
+    let repo = '';
+    if (commit.repo) {
+      const parts = commit.repo.split('/');
+      owner = parts[0] || '';
+      repo = parts.slice(1).join('/') || '';
+    }
+
+    for (const file of commit.files || []) {
+      const existingGroup = devGroups[author].find(g => g.filename === file.filename && g.headSha === commit.parentSha);
+
+      if (existingGroup) {
+        // Continuous edit on the same file! Update the head and union the lines.
+        existingGroup.headSha = commit.sha;
+        const unionSet = new Set([...existingGroup.modifiedLines, ...file.addedLines]);
+        existingGroup.modifiedLines = Array.from(unionSet).sort((a, b) => a - b);
+      } else {
+        // Broken chain or new file, start a new group
+        devGroups[author].push({
+          owner,
+          repo,
+          filename: file.filename,
+          baseSha: commit.parentSha,
+          headSha: commit.sha,
+          modifiedLines: [...file.addedLines].sort((a, b) => a - b)
+        });
+      }
+    }
+  }
+
+  return devGroups;
+}

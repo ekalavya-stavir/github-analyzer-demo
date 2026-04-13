@@ -154,3 +154,136 @@ export function analyzeComplexity(patches) {
   };
 }
 
+/**
+ * Calculates the Cyclomatic Complexity and number of functions within an AST node.
+ * 
+ * @param {import('tree-sitter').SyntaxNode} node 
+ * @returns {{ decisionPoints: number, functions: number }}
+ */
+export function calculateNodeComplexity(node) {
+  let decisionPoints = 0;
+  let functions = 0;
+
+  function traverse(n) {
+    if (!n) return;
+
+    if (
+      n.type === 'function_declaration' ||
+      n.type === 'function_definition' ||    // PHP
+      n.type === 'arrow_function' ||
+      n.type === 'method_definition' ||
+      n.type === 'method_declaration' ||     // PHP
+      n.type === 'function_expression' // anonymous function expression
+    ) {
+      functions++;
+    }
+
+    if (isDecisionNode(n)) {
+      decisionPoints++;
+    }
+
+    for (let i = 0; i < n.childCount; i++) {
+      traverse(n.child(i));
+    }
+  }
+
+  traverse(node);
+  return { decisionPoints, functions: Math.max(functions, 1) };
+}
+
+/**
+ * Checks if an AST node is a decision point (branching/complexity-adding construct).
+ * @param {import('tree-sitter').SyntaxNode} n
+ * @returns {boolean}
+ */
+function isDecisionNode(n) {
+  if (
+    n.type === 'if_statement' ||
+    n.type === 'for_statement' ||
+    n.type === 'for_in_statement' ||
+    n.type === 'for_of_statement' ||
+    n.type === 'foreach_statement' ||      // PHP
+    n.type === 'while_statement' ||
+    n.type === 'do_statement' ||
+    n.type === 'catch_clause' ||
+    n.type === 'ternary_expression' ||
+    n.type === 'switch_case' ||
+    n.type === 'switch_default' ||
+    n.type === 'elseif_clause'             // PHP elseif
+  ) {
+    return true;
+  }
+  if (n.type === 'binary_expression') {
+    const operator = n.child(1);
+    if (operator && ['&&', '||', '??', 'and', 'or'].includes(operator.text)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Counts decision points in the AST that fall within specific line ranges.
+ * Lines are 1-indexed to match git diff conventions.
+ * 
+ * @param {import('tree-sitter').SyntaxNode} rootNode
+ * @param {number[]} lines - 1-indexed line numbers to scope the count to
+ * @returns {number} count of decision points within those lines
+ */
+export function countDecisionPointsInLines(rootNode, lines) {
+  if (!rootNode || !lines || lines.length === 0) return 0;
+
+  const lineSet = new Set(lines);
+  let count = 0;
+
+  function traverse(n) {
+    if (!n) return;
+
+    if (isDecisionNode(n)) {
+      // tree-sitter rows are 0-indexed, modifiedLines are 1-indexed
+      const nodeLine = n.startPosition.row + 1;
+      if (lineSet.has(nodeLine)) {
+        count++;
+      }
+    }
+
+    for (let i = 0; i < n.childCount; i++) {
+      traverse(n.child(i));
+    }
+  }
+
+  traverse(rootNode);
+  return count;
+}
+
+/**
+ * Calculates the delta complexity between a base commit AST and a head commit AST,
+ * scoped to the developer's modified lines.
+ * 
+ * Only counts decision points that fall on lines the developer actually touched.
+ * This prevents a developer from being credited/penalized for complexity they didn't write.
+ * 
+ * @param {import('tree-sitter').SyntaxNode} baseAst 
+ * @param {import('tree-sitter').SyntaxNode} headAst 
+ * @param {number[]} modifiedLines - 1-indexed line numbers the developer modified
+ * @returns {number} The difference in complexity (delta)
+ */
+export function calculateDeltaComplexity(baseAst, headAst, modifiedLines) {
+  if (!modifiedLines || modifiedLines.length === 0) {
+    return 0;
+  }
+
+  // Count decision points in the head AST that fall on modified lines.
+  // These are the decision points the developer's code currently contains.
+  const headComplexityInModifiedLines = countDecisionPointsInLines(headAst, modifiedLines);
+
+  // For the base AST, count decision points on the same line numbers.
+  // If these lines existed before and had decision points, we subtract them
+  // to get the net new complexity the developer introduced.
+  const baseComplexityInModifiedLines = baseAst
+    ? countDecisionPointsInLines(baseAst, modifiedLines)
+    : 0;
+
+  return headComplexityInModifiedLines - baseComplexityInModifiedLines;
+}
+

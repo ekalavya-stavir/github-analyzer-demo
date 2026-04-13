@@ -13,7 +13,7 @@
   "scripts": {
     "start": "node index.js",
     "analyse": "node index.js",
-    "test": "node --test src/**/*.test.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint src/"
   },
   "keywords": [
@@ -26,6 +26,13 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "octokit": "^4.1.0"
+    "octokit": "^4.1.0",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-javascript": "^0.23.0",
+    "tree-sitter-php": "^0.23.12",
+    "tree-sitter-typescript": "^0.23.2"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0"
   }
 }

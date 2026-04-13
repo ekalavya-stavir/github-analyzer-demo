@@ -1,15 +1,15 @@
 /**
  * PR Review Contribution Analyzer
  *
- * Two equally-weighted sub-scores (50/50):
+ * Two sub-scores (75/25):
  *
- * 1. PR Review Ratio
+ * 1. PR Review Ratio (75%)
  *    - actual = PRs this developer reviewed / total PRs in duration
  *    - expected = total developers / total PRs in duration
  *    - ratio >= expected → full score (10)
  *    - ratio < expected → proportional (actual / expected * 10)
  *
- * 2. Comment Density
+ * 2. Comment Density (25%)
  *    - actual = comments given / total lines changed in PRs they reviewed
  *    - expected = 1 comment per 50 lines (0.02)
  *    - ratio >= expected → full score (10)
@@ -62,8 +62,8 @@ export function analyzePRReview(developerData, baseStats) {
   }
   commentDensityScore = Math.max(0, Math.min(10, commentDensityScore));
 
-  // --- Combined: 50/50 blend ---
-  const score = (reviewRatioScore + commentDensityScore) / 2;
+  // --- Combined: 75/25 blend ---
+  const score = (reviewRatioScore * 0.75) + (commentDensityScore * 0.25);
 
   return {
     score: Math.round(score * 10) / 10,

@@ -7,15 +7,15 @@
  */
 
 export const DEFAULT_WEIGHTS = {
-  readability: 0.13,
-  cyclomaticComplexity: 0.07,
-  codeMaintainability: 0.13,
-  solidPrinciples: 0.11,
-  nplusone: 0.11,
-  prSize: 0.07,
-  prReview: 0.13,
-  duplication: 0.13,
-  contribution: 0.12,
+  cyclomaticComplexity: 0.16,
+  readability: 0.15,
+  prSize: 0.15,
+  nplusone: 0.14,
+  prReview: 0.14,
+  solidPrinciples: 0.07,
+  duplication: 0.07,
+  codeMaintainability: 0.06,
+  contribution: 0.06,
 };
 
 export const METRIC_LABELS = {
@@ -89,7 +89,7 @@ export function generateImprovements(metricScores) {
 function getStrengthDescription(metric, data) {
   const descriptions = {
     readability: `Readable code with ${data.details?.commentDensity || 0} comment density.`,
-    cyclomaticComplexity: `Low complexity with max ${data.details?.maxComplexity || 0} (avg ${data.details?.avgComplexity || 0}) per function.`,
+    cyclomaticComplexity: `Low complexity. Added a net of ${data.details?.addedComplexity || 0} new decision points relative to base files.`,
     codeMaintainability: `Well-structured code with MI of ${data.details?.maintainabilityIndex || 'N/A'} and good structural organization.`,
     solidPrinciples: `Good adherence to SOLID principles.`,
     nplusone: `No N+1 query patterns detected.`,
@@ -104,7 +104,7 @@ function getStrengthDescription(metric, data) {
 function getImprovementSuggestion(metric, data) {
   const suggestions = {
     readability: `Improve naming, reduce nesting depth (max: ${data.details?.maxNestingDepth || 0}), add comments.`,
-    cyclomaticComplexity: `Reduce function complexity (max: ${data.details?.maxComplexity || 0}, avg: ${data.details?.avgComplexity || 0}). Break complex logic into smaller functions.`,
+    cyclomaticComplexity: `Reduce newly introduced complexity. Added a net of ${data.details?.addedComplexity || 0} decision points over ${data.details?.linesEvaluated || 0} evaluated lines.`,
     codeMaintainability: `Reduce file sizes, add documentation, and improve code organization with clear abstractions.`,
     solidPrinciples: `Address ${data.details?.srpViolations || 0} SRP violations. Reduce class/module responsibilities.`,
     nplusone: `Fix ${data.details?.totalViolations || 0} potential N+1 query patterns. Use eager loading or batching.`,

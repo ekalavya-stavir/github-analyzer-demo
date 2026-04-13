@@ -46,7 +46,10 @@ const ISP_VIOLATIONS = [
 
 const COUPLING_PATTERNS = [
   { pattern: /\bglobal\b|\bwindow\b|\bprocess\.env\b/g, weight: 0.5, name: 'global-access' },
-  { pattern: /\.\w+\.\w+\.\w+\.\w+/g, weight: 0.4, name: 'deep-property-chain' },
+  // Detects chains like $obj->foo->bar->baz or obj.foo.bar.baz
+  // Must strip quoted strings before matching to avoid false positives
+  // on config keys like config('a.b.c.d.e')
+  { pattern: /\.\w+\.\w+\.\w+\.\w+/g, weight: 0.4, name: 'deep-property-chain', stripQuotes: true },
 ];
 
 export function analyzeSolid(patches) {
@@ -127,13 +130,38 @@ export function analyzeSolid(patches) {
       }
 
       for (const pattern of COUPLING_PATTERNS) {
-        const matches = line.match(pattern.pattern);
+        // Strip quoted strings to avoid false positives on config keys like config('a.b.c.d')
+        const testLine = pattern.stripQuotes
+          ? line.replace(/(["'])(?:(?!\1|\\).|\\.)*\1/g, '')
+          : line;
+        const matches = testLine.match(pattern.pattern);
         if (matches) {
           couplingViolations += matches.length * pattern.weight;
           evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
         }
       }
     }
+  }
+
+  // Insufficient data: too few lines to meaningfully evaluate SOLID adherence
+  if (totalLines < 10) {
+    return {
+      score: 5,
+      details: {
+        srpViolations: 0,
+        ocpViolations: 0,
+        ispViolations: 0,
+        dipViolations: 0,
+        couplingViolations: 0,
+        godClassIndicators: 0,
+        violationRate: 0,
+        topViolations: [],
+        linesAnalyzed: totalLines,
+        evidence: [
+          { file: 'Summary', line: 0, snippet: `Only ${totalLines} lines analyzed — insufficient data for SOLID evaluation`, issue: 'insufficient-data' },
+        ],
+      },
+    };
   }
 
   const totalViolationWeight =
@@ -145,24 +173,13 @@ export function analyzeSolid(patches) {
     godClassIndicators * 1.5;
 
   const violationRate = totalLines > 0 ? totalViolationWeight / totalLines : 0;
-  const hasViolations = totalViolationWeight > 0;
 
-  let score;
-
-  if (!hasViolations) {
-    // No violations found — score 6-10 based on amount of code analyzed
-    if (totalLines >= 200) score = 10;
-    else if (totalLines >= 100) score = 9;
-    else if (totalLines >= 50) score = 8;
-    else if (totalLines >= 20) score = 7;
-    else score = 6;
-  } else {
-    // Violations found — score 1-4 based on severity
-    if (violationRate > 0.1 || srpViolations > 3) score = 1;
-    else if (violationRate > 0.05 || srpViolations > 2) score = 2;
-    else if (violationRate > 0.03 || srpViolations > 1) score = 3;
-    else score = 4;
-  }
+  // Continuous rate-based scoring using violations per KLOC.
+  // This is deterministic and consistent across sessions — same code always
+  // produces the same score regardless of teammates.
+  // 0 /KLOC → 10, 3/KLOC → 7, 5/KLOC → 5, 8/KLOC → 2, 9+/KLOC → 1
+  const violationsPerKLOC = violationRate * 1000;
+  const score = Math.max(1, Math.round((10 - violationsPerKLOC) * 10) / 10);
 
   return {
     score: Math.round(score * 10) / 10,

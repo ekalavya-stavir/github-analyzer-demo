@@ -7,21 +7,22 @@
  * a structured HTML scorecard report.
  */
 
-import { writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { writeFile, mkdtemp, rm as rmAsync } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 import { parseCliArgs } from './src/cli/parser.js';
 import { loadConfig } from './src/cli/config.js';
 import { initClient } from './src/github/client.js';
-import { fetchRepoData, fetchCommitDetail } from './src/github/fetcher.js';
-import { analyzeComplexity } from './src/analysis/complexity/index.js';
+import { fetchRepoData, fetchCommitDetail, cloneRepository } from './src/github/fetcher.js';
+import { runASTAnalysisForDeveloper } from './src/analysis/ast-orchestrator.js';
 import { analyzeDuplication } from './src/analysis/duplication/index.js';
-import { analyzeNPlusOne } from './src/analysis/nplusone/index.js';
 import { analyzeReadability } from './src/analysis/readability/index.js';
 import { analyzeSolid } from './src/analysis/solid/index.js';
 import { analyzePRSize } from './src/analysis/pr-size/index.js';
 import { analyzePRReview } from './src/analysis/pr-review/index.js';
 import { analyzeMaintainability } from './src/analysis/maintainability/index.js';
+import { extractModifiedLineNumbers } from './src/analysis/diff-utils.js';
 import { analyzeContribution, computeContributionBuckets } from './src/analysis/contribution/index.js';
 import {
   calculateFinalScore,
@@ -54,11 +55,28 @@ async function main() {
   console.log('📡 Fetching repository data...\n');
 
   const repoDataList = [];
+  const localReposMap = new Map();
+  const cleanupDirs = [];
+
+  const cleanup = async () => {
+    if (cleanupDirs.length > 0) process.stdout.write('\n🧹 Cleaning up temporary checkout directories... ');
+    for (const dir of cleanupDirs) {
+      try { await rmAsync(dir, { recursive: true, force: true }); } catch (e) { }
+    }
+    if (cleanupDirs.length > 0) console.log('Done.');
+  };
+  process.on('SIGINT', async () => { await cleanup(); process.exit(1); });
+
   for (const repo of repos) {
     const [owner, repoName] = repo.split('/');
     try {
       const data = await fetchRepoData(owner, repoName, sinceDate);
       repoDataList.push(data);
+
+      const tempDir = await mkdtemp(join(tmpdir(), `github-analyser-${repoName}-`));
+      cleanupDirs.push(tempDir);
+      await cloneRepository(owner, repoName, token, tempDir);
+      localReposMap.set(repo, tempDir);
     } catch (err) {
       console.error(`  Error fetching ${repo}: ${err.message}`);
       if (err.status === 404) {
@@ -82,10 +100,36 @@ async function main() {
   const contributorMap = buildContributorMap(repoDataList);
   const allLogins = Object.keys(contributorMap);
   const excluded = allLogins.filter((l) => excludeSet.has(l.toLowerCase()));
-  const contributorLogins = allLogins.filter((l) => !excludeSet.has(l.toLowerCase()));
+
+  // Filter out developers who have no commits within the actual reporting window.
+  // Multiple paths can pull in stale developers:
+  //   1. GitHub commits API `since` filters by committer date, not author date.
+  //      Rebased/squash-merged old commits get new committer timestamps, so the API
+  //      returns them even though the author date is months/years old.
+  //   2. PRs are fetched if updated_at >= sinceDate. An old PR getting a new comment
+  //      or label pulls in the original PR author with all their file patches.
+  //   3. PR reviewers/commenters on old PRs are also pulled in.
+  // Fix: verify each developer has at least one commit with an author date >= sinceDate.
+  const hasRecentCommit = (login) => {
+    const commits = contributorMap[login].commits || [];
+    return commits.some((c) => {
+      if (!c.date) return false;
+      return new Date(c.date) >= sinceDate;
+    });
+  };
+
+  const staleLogins = allLogins.filter((l) =>
+    !excludeSet.has(l.toLowerCase()) && !hasRecentCommit(l)
+  );
+  const contributorLogins = allLogins.filter((l) =>
+    !excludeSet.has(l.toLowerCase()) && hasRecentCommit(l)
+  );
 
   if (excluded.length > 0) {
     console.log(`  Excluded: ${excluded.join(', ')}`);
+  }
+  if (staleLogins.length > 0) {
+    console.log(`  Filtered out ${staleLogins.length} developer(s) with no commits in the reporting window: ${staleLogins.join(', ')}`);
   }
   console.log(`  Found ${contributorLogins.length} unique contributors\n`);
 
@@ -137,61 +181,68 @@ async function main() {
   }
 
   const developerScores = [];
+  const CONCURRENCY_LIMIT = 2;
 
-  for (const login of activeLogins) {
-    const contrib = contributorMap[login];
-    process.stdout.write(`  Analyzing ${login}...`);
+  for (let i = 0; i < activeLogins.length; i += CONCURRENCY_LIMIT) {
+    const batchLogins = activeLogins.slice(i, i + CONCURRENCY_LIMIT);
 
-    const patches = contrib.patches || [];
-    const commits = contrib.commits || [];
-    const pullRequests = contrib.authoredPRs || [];
+    await Promise.all(batchLogins.map(async (login) => {
+      const contrib = contributorMap[login];
+      console.log(`  🔍 Analyzing ${login} concurrently...`);
 
-    const reviewedPRs = contrib.reviewedPRs || [];
-    const prsReviewed = new Set(reviewedPRs.map((pr) => pr.number)).size;
-    const reviewComments = (contrib.reviewComments || []).length;
-    const reviewedPRsLinesChanged = reviewedPRs.reduce(
-      (sum, pr) => sum + (pr.additions || 0) + (pr.deletions || 0),
-      0
-    );
+      const patches = contrib.patches || [];
+      const commits = contrib.commits || [];
+      const pullRequests = contrib.authoredPRs || [];
 
-    const devContrib = devContribData[login] || { added: 0, changed: 0, total: 0 };
+      const reviewedPRs = contrib.reviewedPRs || [];
+      const prsReviewed = new Set(reviewedPRs.map((pr) => pr.number)).size;
+      const reviewComments = (contrib.reviewComments || []).length;
+      const reviewedPRsLinesChanged = reviewedPRs.reduce(
+        (sum, pr) => sum + (pr.additions || 0) + (pr.deletions || 0),
+        0
+      );
 
-    const metrics = {
-      codeMaintainability: analyzeMaintainability(patches),
-      prReview: analyzePRReview(
-        { prsReviewed, reviewComments, reviewedPRsLinesChanged },
-        baseStats
-      ),
-      duplication: analyzeDuplication(patches),
-      prSize: analyzePRSize(pullRequests),
-      solidPrinciples: analyzeSolid(patches),
-      readability: analyzeReadability(patches),
-      cyclomaticComplexity: analyzeComplexity(patches),
-      nplusone: analyzeNPlusOne(patches),
-      contribution: analyzeContribution(devContrib, contributionBuckets),
-    };
+      const devContrib = devContribData[login] || { added: 0, changed: 0, total: 0 };
 
-    const finalScore = calculateFinalScore(metrics);
-    const strengths = generateStrengths(metrics);
-    const improvements = generateImprovements(metrics);
+      const astMetrics = await runASTAnalysisForDeveloper(login, commits, patches, localReposMap);
 
-    developerScores.push({
-      login,
-      avatar: contrib.avatar,
-      finalScore,
-      contributionSize: devContrib.total,
-      metrics,
-      strengths,
-      improvements,
+      const metrics = {
+        codeMaintainability: analyzeMaintainability(patches),
+        prReview: analyzePRReview(
+          { prsReviewed, reviewComments, reviewedPRsLinesChanged },
+          baseStats
+        ),
+        duplication: analyzeDuplication(patches),
+        prSize: analyzePRSize(pullRequests),
+        solidPrinciples: analyzeSolid(patches),
+        readability: analyzeReadability(patches),
+        cyclomaticComplexity: astMetrics.cyclomaticComplexity,
+        nplusone: astMetrics.nplusone,
+        contribution: analyzeContribution(devContrib, contributionBuckets),
+      };
+
+      const finalScore = calculateFinalScore(metrics);
+      const strengths = generateStrengths(metrics);
+      const improvements = generateImprovements(metrics);
+
+      developerScores.push({
+        login,
+        avatar: contrib.avatar,
+        finalScore,
+        contributionSize: devContrib.total,
+        metrics,
+        strengths,
+        improvements,
         stats: {
           commits: commits.length,
           prsAuthored: pullRequests.length,
           reviewCommentsGiven: reviewComments,
           linesAdded: devContrib.added,
         },
-    });
+      });
 
-    console.log(` raw score: ${finalScore}/100`);
+      console.log(`  ✅ ${login} complete: raw score ${finalScore}/100`);
+    }));
   }
 
   const smoothedScores = applyBayesianSmoothing(developerScores);
@@ -255,6 +306,7 @@ async function main() {
   console.log(`   File: ${outputPath}`);
   console.log(`   Contributors: ${smoothedScores.length} active, ${reviewOnlyScores.length} review-only`);
   console.log(`   Time: ${elapsed}s\n`);
+  await cleanup();
 }
 
 function countLinesFromPatch(patch) {
@@ -366,35 +418,64 @@ function buildContributorMap(repoDataList) {
 async function enrichContributorPatches(contributorMap, repoDataList) {
   const commitFetchPromises = [];
 
+  // Build a lookup of owner/repo from the repo data list
+  const repoLookup = {};
   for (const repo of repoDataList) {
-    const commitsByAuthor = {};
+    repoLookup[`${repo.owner}/${repo.repo}`] = { owner: repo.owner, repo: repo.repo };
+  }
 
-    for (const commit of repo.commits) {
-      const login = commit.author;
-      if (!login || login === 'unknown') continue;
-      if (!commitsByAuthor[login]) commitsByAuthor[login] = [];
-      commitsByAuthor[login].push(commit);
-    }
+  let enrichedCount = 0;
+  let failedCount = 0;
+  let deduplicatedCount = 0;
 
-    for (const [login, commits] of Object.entries(commitsByAuthor)) {
-      const contributor = contributorMap[login];
-      if (!contributor) continue;
+  // Iterate over the contributorMap commits (the copies we actually pass to the AST pipeline)
+  for (const [login, contributor] of Object.entries(contributorMap)) {
+    const commitsToFetch = contributor.commits.slice(0, 10);
 
-      const hasPRPatches = contributor.patches.length > 0;
-      if (hasPRPatches) continue;
+    // Build a deduplication set from any PR-level patches already in the array.
+    // Key: "filename|patch_content" — if a commit-level patch matches an existing
+    // PR-level patch, we skip it to avoid counting the same code change twice.
+    const existingPatchKeys = new Set(
+      contributor.patches.map((p) => `${p.filename}|${simplePatchHash(p.patch)}`)
+    );
 
-      const commitsToFetch = commits.slice(0, 10);
-      for (const commit of commitsToFetch) {
-        commitFetchPromises.push(
-          fetchCommitDetail(repo.owner, repo.repo, commit.sha).then((detail) => {
-            if (detail?.files) {
-              for (const file of detail.files) {
+    for (const commit of commitsToFetch) {
+      const repoInfo = repoLookup[commit.repo];
+      if (!repoInfo) continue;
+
+      commitFetchPromises.push(
+        fetchCommitDetail(repoInfo.owner, repoInfo.repo, commit.sha).then((detail) => {
+          if (detail?.files) {
+            commit.parentSha = detail.parentSha || '';
+            commit.files = detail.files.map((f) => ({
+              filename: f.filename,
+              addedLines: extractModifiedLineNumbers(f.patch)
+            }));
+            // Deduplicate: only add commit-level patches that don't duplicate
+            // existing PR-level patches (same filename + same patch content).
+            for (const file of detail.files) {
+              const key = `${file.filename}|${simplePatchHash(file.patch)}`;
+              if (!existingPatchKeys.has(key)) {
                 contributor.patches.push(file);
+                existingPatchKeys.add(key);
+              } else {
+                deduplicatedCount++;
               }
             }
-          })
-        );
-      }
+            enrichedCount++;
+          } else {
+            failedCount++;
+            if (process.env.DEBUG) {
+              console.warn(`    ⚠ fetchCommitDetail returned null for ${commit.sha.substring(0, 7)} (${login})`);
+            }
+          }
+        }).catch((err) => {
+          failedCount++;
+          if (process.env.DEBUG) {
+            console.warn(`    ⚠ fetchCommitDetail failed for ${commit.sha.substring(0, 7)} (${login}): ${err.message}`);
+          }
+        })
+      );
     }
   }
 
@@ -403,6 +484,38 @@ async function enrichContributorPatches(contributorMap, repoDataList) {
     const batch = commitFetchPromises.slice(i, i + batchSize);
     await Promise.allSettled(batch);
   }
+
+  if (failedCount > 0 || deduplicatedCount > 0) {
+    console.warn(`  ⚠ Commit enrichment: ${enrichedCount} succeeded, ${failedCount} failed, ${deduplicatedCount} duplicate patches skipped`);
+  }
+
+  // Debug: log how many commits per developer have file data populated
+  if (process.env.DEBUG) {
+    for (const [login, contributor] of Object.entries(contributorMap)) {
+      const withFiles = contributor.commits.filter((c) => c.files && c.files.length > 0).length;
+      const total = contributor.commits.length;
+      if (withFiles === 0 && total > 0) {
+        console.warn(`  ⚠ ${login}: ${total} commits but none have file data (enrichment may have failed)`);
+      } else {
+        console.log(`  ${login}: ${withFiles}/${total} commits enriched with file data`);
+      }
+    }
+  }
+}
+
+/**
+ * Simple hash for patch content deduplication.
+ * Used to detect when the same file change appears in both PR-level and commit-level patches.
+ */
+function simplePatchHash(patch) {
+  if (!patch || typeof patch !== 'string') return '';
+  let hash = 0;
+  for (let i = 0; i < patch.length; i++) {
+    const char = patch.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return hash.toString(36);
 }
 
 function generateOutputFilename(repos, days) {
