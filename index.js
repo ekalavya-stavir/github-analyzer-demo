@@ -371,7 +371,7 @@ function buildContributorMap(repoDataList) {
 
         if (pr.files) {
           for (const file of pr.files) {
-            map[author].patches.push(file);
+            map[author].patches.push({ ...file, repo: `${repo.owner}/${repo.repo}` });
           }
         }
       }
@@ -456,7 +456,7 @@ async function enrichContributorPatches(contributorMap, repoDataList) {
             for (const file of detail.files) {
               const key = `${file.filename}|${simplePatchHash(file.patch)}`;
               if (!existingPatchKeys.has(key)) {
-                contributor.patches.push(file);
+                contributor.patches.push({ ...file, repo: `${repoInfo.owner}/${repoInfo.repo}` });
                 existingPatchKeys.add(key);
               } else {
                 deduplicatedCount++;

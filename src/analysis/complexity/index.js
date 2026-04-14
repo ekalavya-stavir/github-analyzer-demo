@@ -73,7 +73,7 @@ export function analyzeComplexity(patches) {
       }
       decisionPoints += lineDecisionPoints;
       if (lineDecisionPoints >= 2) {
-        evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: 'high-complexity-line' });
+        evidence.push({ file: file.filename, repo: file.repo, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: 'high-complexity-line' });
       }
     }
 
@@ -87,7 +87,7 @@ export function analyzeComplexity(patches) {
           antiPatternCount += matches.length;
           antiPatternWeight += matches.length * rule.weight;
           antiPatternsByType[rule.name] = (antiPatternsByType[rule.name] || 0) + matches.length;
-          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: rule.name });
+          evidence.push({ file: file.filename, repo: file.repo, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: rule.name });
         }
       }
     }

@@ -96,6 +96,7 @@ export async function runASTAnalysisForDeveloper(login, commits, patches, localR
                         totalNPlusOneViolations++;
                         nPlusOneEvidence.push({
                             file: filename,
+                            repo: `${owner}/${repo}`,
                             line: violation.startLine,
                             snippet: violation.snippet,
                             issue: violation.issue
@@ -124,6 +125,7 @@ export async function runASTAnalysisForDeveloper(login, commits, patches, localR
                         totalNPlusOneViolations--;
                         nPlusOneEvidence.push({
                             file: filename,
+                            repo: `${owner}/${repo}`,
                             line: baseViolation.startLine,
                             snippet: baseViolation.snippet,
                             issue: 'n-plus-one-fix'

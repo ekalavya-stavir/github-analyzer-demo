@@ -41,6 +41,7 @@ export function analyzeDuplication(patches) {
         block,
         originalLines: slice.map((s) => s.text),
         file: file.filename,
+        repo: file.repo,
         startLine: slice[0].line,
         endLine: slice[slice.length - 1].line,
       });
@@ -71,6 +72,7 @@ export function analyzeDuplication(patches) {
           duplicateExamples.push({
             locations: items.map((i) => ({
               file: i.file,
+              repo: i.repo,
               startLine: i.startLine,
               endLine: i.endLine,
             })),
@@ -122,6 +124,7 @@ export function analyzeDuplication(patches) {
           const header = `duplicate-block (${ex.occurrences}x across ${uniqueFiles.size} file${uniqueFiles.size > 1 ? 's' : ''})`;
           return ex.locations.map((loc) => ({
             file: loc.file,
+            repo: loc.repo,
             line: loc.startLine,
             snippet: ex.originalLines.map((l, i) => `${loc.startLine + i} | ${l}`).join('\n'),
             issue: header,

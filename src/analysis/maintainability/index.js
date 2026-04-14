@@ -97,7 +97,7 @@ export function analyzeMaintainability(patches) {
 
     if (addedLines.length > 300) {
       longFiles++;
-      evidence.push({ file: file.filename, line: 1, snippet: `File has ${addedLines.length} lines`, issue: 'large-file' });
+      evidence.push({ file: file.filename, repo: file.repo, line: 1, snippet: `File has ${addedLines.length} lines`, issue: 'large-file' });
     }
 
     const dir = file.filename.split('/').slice(0, -1).join('/') || '/';
@@ -111,7 +111,7 @@ export function analyzeMaintainability(patches) {
           techDebtCount += matches.length;
           techDebtWeight += matches.length * rule.weight;
           techDebtByType[rule.name] = (techDebtByType[rule.name] || 0) + matches.length;
-          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: rule.name });
+          evidence.push({ file: file.filename, repo: file.repo, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: rule.name });
         }
       }
     }
@@ -131,7 +131,7 @@ export function analyzeMaintainability(patches) {
         if (matches) {
           antiPatternScore += matches.length * pattern.weight;
           antiPatternDetails.push({ type: pattern.name, file: file.filename, count: matches.length });
-          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
+          evidence.push({ file: file.filename, repo: file.repo, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
         }
       }
     }

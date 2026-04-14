@@ -270,7 +270,7 @@ function renderReviewOnlySection(reviewOnlyDevs) {
                 ${evidence.map((ev) => `
                   <div class="evidence-item">
                     <div class="evidence-header">
-                      <code class="evidence-file">${escapeHtml(ev.file)}</code>
+                      <code class="evidence-file">${ev.repo ? escapeHtml(ev.repo) + ' / ' : ''}${escapeHtml(ev.file)}</code>
                       <span class="evidence-issue" data-issue="${escapeHtml(ev.issue)}">${escapeHtml(ev.issue)}</span>
                     </div>
                     ${ev.snippet ? `<pre class="evidence-snippet">${escapeHtml(ev.snippet)}</pre>` : ''}
@@ -1393,7 +1393,7 @@ function getScripts() {
         for (var i = 0; i < realEvidence.length; i++) {
           var ev = realEvidence[i];
           h += '<div class="evidence-item"><div class="evidence-header">';
-          h += '<code class="evidence-file">' + esc(ev.file) + '</code>';
+          h += '<code class="evidence-file">' + (ev.repo ? esc(ev.repo) + ' / ' : '') + esc(ev.file) + '</code>';
           if (ev.line > 0) h += '<span class="evidence-line">line ' + ev.line + '</span>';
           h += renderIssueTooltip(ev.issue);
           h += '</div>';

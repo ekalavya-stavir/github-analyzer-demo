@@ -85,13 +85,13 @@ export function analyzeSolid(patches) {
     if (fileMethodCount > 15) {
       srpViolations++;
       violationDetails.push({ type: 'SRP', file: file.filename, detail: `${fileMethodCount} methods in single file` });
-      evidence.push({ file: file.filename, line: 1, snippet: `${fileMethodCount} methods in single file`, issue: 'SRP-too-many-methods' });
+      evidence.push({ file: file.filename, repo: file.repo, line: 1, snippet: `${fileMethodCount} methods in single file`, issue: 'SRP-too-many-methods' });
     }
 
     if (addedLines.length > 300) {
       srpViolations++;
       violationDetails.push({ type: 'SRP', file: file.filename, detail: `Large file: ${addedLines.length} lines added` });
-      evidence.push({ file: file.filename, line: 1, snippet: `Large file: ${addedLines.length} lines added`, issue: 'SRP-large-file' });
+      evidence.push({ file: file.filename, repo: file.repo, line: 1, snippet: `Large file: ${addedLines.length} lines added`, issue: 'SRP-large-file' });
     }
 
     for (let lineIndex = 0; lineIndex < addedLines.length; lineIndex++) {
@@ -101,7 +101,7 @@ export function analyzeSolid(patches) {
         const matches = line.match(pattern.pattern);
         if (matches) {
           godClassIndicators += matches.length * pattern.weight;
-          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
+          evidence.push({ file: file.filename, repo: file.repo, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
         }
       }
 
@@ -109,7 +109,7 @@ export function analyzeSolid(patches) {
         const matches = line.match(pattern.pattern);
         if (matches) {
           ocpViolations += matches.length;
-          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
+          evidence.push({ file: file.filename, repo: file.repo, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
         }
       }
 
@@ -117,7 +117,7 @@ export function analyzeSolid(patches) {
         const matches = line.match(pattern.pattern);
         if (matches) {
           ispViolations += matches.length * pattern.weight;
-          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
+          evidence.push({ file: file.filename, repo: file.repo, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
         }
       }
 
@@ -125,7 +125,7 @@ export function analyzeSolid(patches) {
         const matches = line.match(pattern.pattern);
         if (matches) {
           dipViolations += matches.length * pattern.weight;
-          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
+          evidence.push({ file: file.filename, repo: file.repo, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
         }
       }
 
@@ -137,7 +137,7 @@ export function analyzeSolid(patches) {
         const matches = testLine.match(pattern.pattern);
         if (matches) {
           couplingViolations += matches.length * pattern.weight;
-          evidence.push({ file: file.filename, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
+          evidence.push({ file: file.filename, repo: file.repo, line: lineIndex + 1, snippet: line.trim().substring(0, 120), issue: pattern.name });
         }
       }
     }
