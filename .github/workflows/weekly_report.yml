@@ -2,9 +2,8 @@ name: Weekly Developer Report
 
 on:
   schedule:
-    # This runs every Sunday at 10:00 PM UTC (Adjust UTC to your timezone)
-    - cron: '0 10 * * *'
-  workflow_dispatch: # Allows you to run it manually for testing
+    - cron: '10 10 * * *' # 3:30 PM IST
+  workflow_dispatch: 
 
 jobs:
   build:
@@ -25,9 +24,12 @@ jobs:
       - name: Generate Report
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-        # Replace 'npm start' with the specific command used by this tool
-        # Ensure you pass arguments for 'last 7 days' if the tool supports it
-        run: npm start -- --days=7 --output=report.pdf
+        # We are changing this to .html to match your email step
+        # If this fails, try changing 'npm start' to 'node index.js'
+        run: npm start -- --days=7 --output=report.html
+
+      - name: Check File (Debug)
+        run: ls -R # This shows us if report.html was actually created
 
       - name: Send Email
         uses: dawidd6/action-send-mail@v3
@@ -39,4 +41,4 @@ jobs:
           subject: Weekly Developer Report
           to: thalapathycaptain15@gmail.com
           from: GitHub Analyzer Automation
-          attachments: report.html # Change extension to .html or .json based on what the tool creates
+          attachments: report.html
