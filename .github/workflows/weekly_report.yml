@@ -1,0 +1,42 @@
+name: Weekly Developer Report
+
+on:
+  schedule:
+    # This runs every Sunday at 10:00 PM UTC (Adjust UTC to your timezone)
+    - cron: '0 10 * * *'
+  workflow_dispatch: # Allows you to run it manually for testing
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Generate Report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        # Replace 'npm start' with the specific command used by this tool
+        # Ensure you pass arguments for 'last 7 days' if the tool supports it
+        run: npm start -- --days=7 --output=report.pdf
+
+      - name: Send Email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ekalavyababu@gmail.com
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: Weekly Developer Report
+          to: thalapathycaptain15@gmail.com
+          from: GitHub Analyzer Automation
+          attachments: report.html # Change extension to .html or .json based on what the tool creates
