@@ -23,11 +23,10 @@ jobs:
 
       - name: Generate Report
         env:
+          # This token allows the tool to read the repository data
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-        # We are changing this to .html to match your email step
-        # If this fails, try changing 'npm start' to 'node index.js'
-        run: npm start -- --days=7 --output=report.html
-
+        run: |
+          npm start -- --days=7 --repos="ekalavya-stavir/github-analyzer-demo" --output=report.html
       - name: Check File (Debug)
         run: ls -R # This shows us if report.html was actually created
 
