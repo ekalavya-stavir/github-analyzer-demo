@@ -2,7 +2,7 @@ name: Weekly Developer Report
 
 on:
   schedule:
-    - cron: '10 10 * * *' # 3:30 PM IST
+    - cron: '30 5 * * *'
   workflow_dispatch: 
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
           # This token allows the tool to read the repository data
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
-          npm start -- --days=7 --repos="ekalavya-stavir/github-analyzer-demo" --output=report.html
+          npm start -- --days=7 --repos="Centrim-Life-Pty-Ltd/centrim_api,Centrim-Life-Pty-Ltd/centrim_api_uk,Centrim-Life-Pty-Ltd/centrim_life,Centrim-Life-Pty-Ltd/centrim_life_uk" --output=report.html
       - name: Check File (Debug)
         run: ls -R # This shows us if report.html was actually created
 
@@ -37,7 +37,7 @@ jobs:
           server_port: 465
           username: ekalavyababu@gmail.com
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: Weekly Developer Report
-          to: thalapathycaptain15@gmail.com
+          subject: Centrim - Weekly Developer Feedback Report
+          to: ekalavya.babu@stavir.com,santhosh.krishna@stavir.com
           from: GitHub Analyzer Automation
           attachments: report.html
